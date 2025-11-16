@@ -5,288 +5,273 @@ import subprocess
 from faster_whisper import WhisperModel
 import argparse
 
+# Módulos propios
+from logger_config import setup_logger
+from config import *
+from utils import (
+    validate_ffmpeg,
+    sanitize_filename,
+    ensure_directory_exists,
+    is_audio_file,
+    is_video_file
+)
+
+# Configurar logger
+logger = setup_logger(__name__)
+
 def get_media_info(media_path):
-    """Gets media title and date from filename."""
+    """
+    Obtiene título y fecha del nombre de archivo de un medio.
+
+    Args:
+        media_path (str): Ruta al archivo de medio
+
+    Returns:
+        tuple: (título, fecha) o (None, None) si falla
+
+    Note:
+        Formato esperado de archivo: "YYYY-MM-DD - Título.ext"
+    """
     try:
-        # Expecting filename format: "YYYY-MM-DD - Title.ext"
         filename = os.path.basename(media_path)
-        # Extract date and title using regex - compatible with multiple media extensions
+        # Extract date and title using regex
         match = re.match(r'(\d{4}-\d{2}-\d{2})\s*-\s*(.+)\.(\w+)', filename)
-        
+
         if match:
             date = match.group(1)
             title = match.group(2)
-            print(f"📄 Extracted info from {filename}: Date={date}, Title={title}")
+            logger.info(f"📄 Info extraída de {filename}: Fecha={date}, Título={title}")
             return title, date
         else:
             # If filename doesn't match expected format, use file modification date
             mod_time = os.path.getmtime(media_path)
-            date = datetime.datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d')
-            title = os.path.splitext(filename)[0]  # Remove extension
-            print(f"⚠️ Couldn't parse filename format. Using: Date={date}, Title={title}")
+            date = datetime.datetime.fromtimestamp(mod_time).strftime(DATE_FORMAT)
+            title = os.path.splitext(filename)[0]
+            logger.warning(f"⚠️ No se pudo parsear formato del nombre. Usando: Fecha={date}, Título={title}")
             return title, date
     except Exception as e:
-        print(f"❌ Error getting media info from {media_path}: {e}")
+        logger.error(f"❌ Error al obtener info de medio desde {media_path}: {e}", exc_info=True)
         return None, None
 
 def extract_audio_from_video(video_path, output_dir):
-    """Extracts MP3 audio from a video file."""
-    # Get the basename without extension
+    """
+    Extrae audio MP3 de un archivo de video usando FFmpeg.
+
+    Args:
+        video_path (str): Ruta al archivo de video
+        output_dir (str): Directorio donde guardar el audio extraído
+
+    Returns:
+        str: Ruta al archivo de audio extraído o None si falla
+    """
     filename = os.path.basename(video_path)
     base_name = os.path.splitext(filename)[0]
     output_path = os.path.join(output_dir, f"{base_name}.mp3")
-    
-    # Método 1: Usar FFmpeg directamente (opción preferida)
-    if check_ffmpeg():
-        try:
-            print(f"ℹ️ Extrayendo audio con FFmpeg desde: {filename}")
-            ffmpeg_cmd = [
-                'ffmpeg', 
-                '-i', video_path, 
-                '-q:a', '0',         # Alta calidad
-                '-map', 'a',         # Solo extraer audio
-                '-id3v2_version', '3',  # Compatibilidad ID3 tag
-                output_path,
-                '-y'                # Sobrescribir si existe
-            ]
-            subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            if os.path.exists(output_path):
-                print(f"✅ Audio extraído con FFmpeg: {os.path.basename(output_path)}")
-                return output_path
-            else:
-                print(f"⚠️ FFmpeg no generó el archivo de salida esperado: {output_path}")
-        except Exception as e:
-            print(f"❌ Error al extraer audio con FFmpeg: {e}")
-    else:
-        print(f"⚠️ FFmpeg no disponible. Por favor instale FFmpeg para continuar.")
+
+    try:
+        logger.info(f"ℹ️ Extrayendo audio con FFmpeg desde: {filename}")
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-i', video_path,
+            '-q:a', FFMPEG_AUDIO_QUALITY,
+            '-map', 'a',
+            '-id3v2_version', FFMPEG_ID3_VERSION,
+            output_path,
+            '-y'
+        ]
+        subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_path):
+            logger.info(f"✅ Audio extraído con FFmpeg: {os.path.basename(output_path)}")
+            return output_path
+        else:
+            logger.warning(f"⚠️ FFmpeg no generó el archivo de salida esperado: {output_path}")
+            return None
+    except Exception as e:
+        logger.error(f"❌ Error al extraer audio con FFmpeg: {e}", exc_info=True)
         return None
-    
-    print(f"❌ No se pudo extraer el audio de: {filename}")
-    return None
 
 def transcribe_audio(model, audio_path, output_txt_path, language=None):
-    """Transcribes the audio file using faster-whisper and saves it to a text file.
-    
+    """
+    Transcribe un archivo de audio usando faster-whisper y guarda el resultado.
+
     Args:
-        model: The faster-whisper WhisperModel to use
-        audio_path: Path to the audio file
-        output_txt_path: Path where to save the transcription
-        language: ISO language code (e.g. 'es', 'en', 'fr', None for auto-detection)
+        model: Modelo de WhisperModel a usar
+        audio_path (str): Ruta al archivo de audio
+        output_txt_path (str): Ruta donde guardar la transcripción
+        language (str, optional): Código ISO de idioma (ej. 'es', 'en', 'fr', None para auto-detección)
+
+    Returns:
+        str: Ruta al archivo de transcripción o None si falla
     """
     try:
-        print(f"🎤 Starting transcription for: {os.path.basename(audio_path)}")
+        logger.info(f"🎤 Iniciando transcripción: {os.path.basename(audio_path)}")
 
-        # Si no se especifica el idioma, intentamos detectarlo automáticamente
         target_language = language
         if target_language:
-            print(f"ℹ️ Idioma seleccionado manualmente: {target_language}")
+            logger.info(f"ℹ️ Idioma seleccionado manualmente: {target_language}")
         else:
-            print("ℹ️ Detección automática de idioma activada")
+            logger.info("ℹ️ Detección automática de idioma activada")
 
-        print(f"ℹ️ Procesando audio. Optimizando para evitar repeticiones con nuevos umbrales...")
+        logger.info(f"ℹ️ Procesando audio. Optimizando para evitar repeticiones...")
 
-        # faster-whisper usa segments iterator en lugar de un dict result
+        # faster-whisper usa segments iterator
         segments, info = model.transcribe(
             audio_path,
-            language=target_language,  # Puede ser None para detección automática
-            vad_filter=False,  # VAD deshabilitado (requiere onnxruntime no disponible en Python 3.14)
-            beam_size=5,  # Balance entre velocidad y calidad
-            condition_on_previous_text=False,  # Sin contexto previo para evitar repeticiones
-            temperature=0.1,  # Baja temperatura para más determinismo
-            compression_ratio_threshold=2.0,  # Control de periodos silenciosos
-            log_prob_threshold=-0.6,  # Umbral de probabilidad logarítmica
-            no_speech_threshold=0.2  # Umbral para detectar segmentos sin habla
+            language=target_language,
+            **WHISPER_PARAMS
         )
-        
-        print(f"ℹ️ Idioma detectado: {info.language} (probabilidad: {info.language_probability:.2f})")
-        print("=" * 80)
-        print("📝 TRANSCRIPCIÓN EN VIVO:")
-        print("=" * 80)
-        
+
+        logger.info(f"ℹ️ Idioma detectado: {info.language} (probabilidad: {info.language_probability:.2f})")
+        logger.info("=" * 80)
+        logger.info("📝 TRANSCRIPCIÓN EN VIVO:")
+        logger.info("=" * 80)
+
         # Recolectar todos los segmentos mostrando en tiempo real
         transcription_text = ""
         for segment in segments:
-            # Mostrar cada segmento en vivo
-            print(segment.text, end='', flush=True)
+            logger.info(segment.text)
             transcription_text += segment.text
-        
-        print("\n" + "=" * 80)
+
+        logger.info("=" * 80)
 
         with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write(transcription_text.strip())
-        print(f"✅ Transcripción guardada en: {os.path.basename(output_txt_path)}")
+        logger.info(f"✅ Transcripción guardada: {os.path.basename(output_txt_path)}")
         return output_txt_path
     except Exception as e:
-        print(f"❌ Error during transcription for {os.path.basename(audio_path)}: {e}")
+        logger.error(f"❌ Error durante transcripción de {os.path.basename(audio_path)}: {e}", exc_info=True)
         return None
 
-# Variable global para almacenar el estado de FFmpeg
-ffmpeg_available = None
-
-def check_ffmpeg():
-    """Verifica si FFmpeg está instalado en el sistema."""
-    global ffmpeg_available
-    
-    # Si ya hicimos la verificación antes, retornamos el resultado guardado
-    if ffmpeg_available is not None:
-        return ffmpeg_available
-        
-    try:
-        result = subprocess.run(['ffmpeg', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if result.returncode == 0:
-            version_info = result.stdout.decode('utf-8').split('\n')[0]
-            print(f"✅ FFmpeg detectado: {version_info}")
-            ffmpeg_available = True
-            return True
-        else:
-            print("⚠️ FFmpeg no parece estar disponible.")
-            ffmpeg_available = False
-            return False
-    except FileNotFoundError:
-        print("⚠️ FFmpeg no está instalado o no está en el PATH del sistema.")
-        ffmpeg_available = False
-        return False
-
-def is_audio_file(file_path):
-    """Determina si un archivo es de audio basado en su extensión"""
-    audio_extensions = ('.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg')
-    return file_path.lower().endswith(audio_extensions)
-
-def is_video_file(file_path):
-    """Determina si un archivo es de video basado en su extensión"""
-    video_extensions = ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv')
-    return file_path.lower().endswith(video_extensions)
-
 def main():
+    """
+    Función principal para transcribir archivos de audio/video locales.
+    """
     # Configurar parser de argumentos de línea de comandos
     parser = argparse.ArgumentParser(description='Transcribe audio and video files to text')
     parser.add_argument('--lang', type=str, help='Language code (e.g. es, en, fr). Leave empty for auto-detection.')
-    parser.add_argument('--input', type=str, default='input', help='Input directory containing audio/video files')
-    parser.add_argument('--output', type=str, default='output', help='Output directory for transcriptions')
-    
+    parser.add_argument('--input', type=str, default=INPUT_DIR, help='Input directory containing audio/video files')
+    parser.add_argument('--output', type=str, default=OUTPUT_DIR, help='Output directory for transcriptions')
+
     args = parser.parse_args()
-    
+
+    logger.info("=" * 80)
+    logger.info("🎙️ Iniciando Local Transcriber")
+    logger.info("=" * 80)
+
     # Directorios de trabajo
-    input_dir = args.input  # Directorio para archivos de entrada (videos o audio)
-    output_dir = args.output  # Directorio para transcripciones y audio extraído
-    temp_dir = "temp"    # Directorio temporal para procesamiento
-    
-    # Configuración de idioma (códigos ISO: es, en, fr, etc., None para detección automática)
+    input_dir = args.input
+    output_dir = args.output
+    temp_dir = TEMP_DIR
+
+    # Configuración de idioma
     target_language = args.lang
-    
+
     if target_language:
-        print(f"ℹ️ Idioma seleccionado: {target_language}")
+        logger.info(f"ℹ️ Idioma seleccionado: {target_language}")
     else:
-        print("ℹ️ Se utilizará detección automática de idioma")
-    
+        logger.info("ℹ️ Se utilizará detección automática de idioma")
+
     # Crear directorios si no existen
     for directory in [input_dir, output_dir, temp_dir]:
-        if not os.path.exists(directory):
-            print(f"ℹ️ Creando directorio: {directory}")
-            os.makedirs(directory)
+        ensure_directory_exists(directory)
 
     # Verificar dependencias
-    print("ℹ️ Verificando dependencias...")
-    has_ffmpeg = check_ffmpeg()
-    if not has_ffmpeg:
-        print("❌ FFmpeg no está disponible. Necesario para procesar videos.")
+    logger.info("🔍 Verificando dependencias...")
+    if not validate_ffmpeg():
+        logger.error("❌ FFmpeg no está disponible. Necesario para procesar videos.")
+        logger.error("   Instalalo desde: https://ffmpeg.org/download.html")
         return
 
     # --- Carga del modelo Whisper ---
-    # Usar CPU por defecto. Para GPU: export WHISPER_DEVICE=cuda
-    device = os.environ.get('WHISPER_DEVICE', 'cpu')
-    compute_type = "float16" if device == "cuda" else "int8"
-    
-    print(f"ℹ️ Cargando modelo Whisper en {device.upper()}...")
-    if device == "cpu":
-        print("ℹ️ Para usar GPU: export WHISPER_DEVICE=cuda")
-    
-    whisper_model = WhisperModel("medium", device=device, compute_type=compute_type)
-    print(f"✅ Modelo Whisper 'medium' cargado en {device.upper()}.")
-    
+    logger.info(f"ℹ️ Cargando modelo Whisper '{WHISPER_MODEL_LOCAL}' en {WHISPER_DEVICE.upper()}...")
+    if WHISPER_DEVICE == "cpu":
+        logger.info("ℹ️ Para usar GPU: export WHISPER_DEVICE=cuda")
+
+    whisper_model = WhisperModel(
+        WHISPER_MODEL_LOCAL,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE
+    )
+    logger.info(f"✅ Modelo Whisper '{WHISPER_MODEL_LOCAL}' cargado en {WHISPER_DEVICE.upper()}.")
+
     # Obtener archivos de entrada (audio y video)
-    input_files = [f for f in os.listdir(input_dir) 
-                  if is_audio_file(f) or is_video_file(f)]
-    
+    input_files = [f for f in os.listdir(input_dir)
+                  if is_audio_file(os.path.join(input_dir, f)) or is_video_file(os.path.join(input_dir, f))]
+
     if not input_files:
-        print(f"❌ No se encontraron archivos de audio o video en '{input_dir}'.")
+        logger.error(f"❌ No se encontraron archivos de audio o video en '{input_dir}'.")
         return
-        
-    print(f"ℹ️ Se encontraron {len(input_files)} archivos para procesar.")
+
+    logger.info(f"✅ Se encontraron {len(input_files)} archivo(s) para procesar.")
 
     # Procesar cada archivo
-    for filename in input_files:
+    for idx, filename in enumerate(input_files, 1):
         file_path = os.path.join(input_dir, filename)
-        print(f"\nProcesando: {filename}")
+        logger.info("=" * 80)
+        logger.info(f"📄 Procesando archivo {idx}/{len(input_files)}: {filename}")
+        logger.info("=" * 80)
 
         # Obtener información del archivo
         title, date = get_media_info(file_path)
         if not title or not date:
-            print(f"⚠️ Omitiendo archivo por falta de información: {filename}")
+            logger.warning(f"⚠️ Omitiendo archivo por falta de información: {filename}")
             continue
 
         # Sanitizar título para usar en nombres de archivo
-        safe_title = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
-        
+        safe_title = sanitize_filename(title)
+
         # Manejar la transcripción
-        audio_path = file_path
         audio_for_transcription = None
-        
+
         # Si es un video, extraer el audio primero
         if is_video_file(file_path):
-            print("ℹ️ Detectado archivo de video, extrayendo audio...")
+            logger.info("ℹ️ Detectado archivo de video, extrayendo audio...")
             audio_path = extract_audio_from_video(file_path, temp_dir)
             audio_for_transcription = audio_path
-            
+
             if not audio_path or not os.path.exists(audio_path):
-                print(f"❌ No se pudo extraer el audio del video: {filename}")
+                logger.error(f"❌ No se pudo extraer el audio del video: {filename}")
                 continue
         elif is_audio_file(file_path):
-            print("ℹ️ Detectado archivo de audio, usando directamente...")
+            logger.info("ℹ️ Detectado archivo de audio, usando directamente...")
             audio_for_transcription = file_path
         else:
-            print(f"❌ Tipo de archivo no soportado: {filename}")
+            logger.error(f"❌ Tipo de archivo no soportado: {filename}")
             continue
 
         # Preparar ruta para la transcripción
-        txt_filename = f"{date} - {safe_title}.txt"
+        txt_filename = TRANSCRIPTION_FILE_FORMAT.format(date=date, title=safe_title)
         output_txt_path = os.path.join(output_dir, txt_filename)
-        
+
         # Transcribir el audio
-        print(f"ℹ️ Iniciando transcripción de: {os.path.basename(audio_for_transcription)}")
         transcription_path = transcribe_audio(whisper_model, audio_for_transcription, output_txt_path, language=target_language)
-        
-        # Si se generó audio temporal de un video, guardarlo o eliminarlo según preferencia
+
+        # Si se generó audio temporal de un video, guardarlo
         if is_video_file(file_path) and audio_for_transcription and os.path.exists(audio_for_transcription):
-            # Opción 1: Guardar el audio extraído en el directorio de salida
             audio_filename = os.path.basename(audio_for_transcription)
             final_audio_path = os.path.join(output_dir, audio_filename)
-            
+
             try:
-                # Copiar el archivo de audio al directorio de salida
                 import shutil
                 shutil.copy2(audio_for_transcription, final_audio_path)
-                print(f"✅ Audio guardado en: {os.path.basename(final_audio_path)}")
-                
+                logger.info(f"✅ Audio guardado en: {os.path.basename(final_audio_path)}")
+
                 # Eliminar archivo temporal
                 os.remove(audio_for_transcription)
-                print(f"🗑️ Eliminado archivo temporal: {os.path.basename(audio_for_transcription)}")
+                logger.info(f"🗑️ Eliminado archivo temporal: {os.path.basename(audio_for_transcription)}")
             except Exception as e:
-                print(f"⚠️ Error al gestionar el archivo de audio: {e}")
+                logger.warning(f"⚠️ Error al gestionar el archivo de audio: {e}")
 
-        print(f"✅ Procesamiento completo para: {filename}")
+        logger.info(f"✅ Procesamiento completo para: {filename}")
 
     # Limpiar directorio temporal si está vacío
-    try:
-        if os.path.exists(temp_dir) and not os.listdir(temp_dir):
-            os.rmdir(temp_dir)
-        elif os.path.exists(temp_dir) and os.listdir(temp_dir):
-            print(f"⚠️ Directorio temporal '{temp_dir}' no está vacío, puede requerir limpieza manual.")
-    except OSError as e:
-         print(f"⚠️ Error al eliminar directorio temporal '{temp_dir}': {e}")
+    from utils import clean_temp_directory
+    clean_temp_directory(temp_dir)
 
-    print("\n✅ Procesamiento completo de todos los archivos.")
+    logger.info("=" * 80)
+    logger.info("✅ Procesamiento completo de todos los archivos")
+    logger.info("=" * 80)
 
 if __name__ == '__main__':
     main()
