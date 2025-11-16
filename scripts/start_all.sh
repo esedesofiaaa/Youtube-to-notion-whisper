@@ -30,11 +30,12 @@ fi
 
 # Iniciar Celery Worker en segundo plano
 echo ""
-echo "🔧 Iniciando Celery Worker..."
+echo "🔧 Iniciando Celery Worker (modo secuencial: 1 video a la vez)..."
 celery -A src.celery_app worker \
     --loglevel=info \
-    --concurrency=2 \
-    --max-tasks-per-child=10 \
+    --concurrency=1 \
+    --prefetch-multiplier=1 \
+    --max-tasks-per-child=5 \
     --time-limit=3600 \
     --soft-time-limit=3300 \
     --logfile=logs/celery_worker.log \

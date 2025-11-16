@@ -33,15 +33,18 @@ n8n (Monitoreo de Discord Message DB)
 
 ### 2. **Cola de Tareas** (Celery + Redis)
 - **Broker**: Redis (puerto 6379)
-- **Función**: Gestiona procesamiento asíncrono de videos
+- **Función**: Gestiona procesamiento asíncrono de videos en cola
 - **Características**:
   - Reintentos automáticos (3 intentos)
   - Timeout de 1 hora por tarea
   - Exponential backoff
+  - Procesamiento secuencial (FIFO)
 
 ### 3. **Worker** (Celery Worker)
-- **Concurrencia**: 2 tareas simultáneas
+- **Modo**: Procesamiento secuencial (1 video a la vez)
+- **Concurrencia**: 1 (optimizado para CPU)
 - **Función**: Ejecuta el procesamiento completo de videos
+- **Nota**: Para GPU con suficiente VRAM, se puede aumentar la concurrencia a 2-4
 
 ### 4. **Dashboard** (Flower)
 - **Puerto**: 5555
@@ -364,11 +367,34 @@ CELERY_TASK_SOFT_TIME_LIMIT=3300
 
 ### Ajustar Concurrencia
 
+**Por defecto**: El sistema procesa 1 video a la vez (optimizado para CPU).
+
+#### Opción 1: Usando Variable de Entorno (Recomendado)
+
+```bash
+# En .env
+CELERY_WORKER_CONCURRENCY=1  # Para CPU (por defecto)
+CELERY_WORKER_CONCURRENCY=2  # Para GPU con VRAM suficiente
+CELERY_WORKER_CONCURRENCY=4  # Para GPU potente (RTX 4090, etc.)
+```
+
+#### Opción 2: Editando Script Manualmente
+
 ```bash
 # Editar scripts/start_worker.sh
 celery -A src.celery_app worker \
-    --concurrency=4  # Número de workers concurrentes
+    --concurrency=1  # CPU: Solo 1 video a la vez (recomendado)
+    # --concurrency=2  # GPU: 2 videos simultáneos
+    # --concurrency=4  # GPU potente: 4 videos simultáneos
 ```
+
+**⚠️ Importante**:
+- **CPU**: SIEMPRE usar `--concurrency=1` para evitar saturar el procesador
+- **GPU**: Verificar VRAM disponible antes de aumentar concurrencia
+  - Modelo `small`: ~2GB VRAM por video
+  - Modelo `medium`: ~5GB VRAM por video
+  - RTX 3060 (12GB): max 2 videos simultáneos con `medium`
+  - RTX 4090 (24GB): max 4 videos simultáneos con `medium`
 
 ## Troubleshooting
 

@@ -113,6 +113,11 @@ CELERY_TASK_RETRY_DELAY = int(os.getenv('CELERY_TASK_RETRY_DELAY', '60'))  # 60 
 CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '3600'))  # 1 hora
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '3300'))  # 55 minutos
 
+# Configuración de workers
+# IMPORTANTE: Para CPU, usar concurrency=1 (procesamiento secuencial)
+# Para GPU, se puede aumentar a 2-4 dependiendo de VRAM disponible
+CELERY_WORKER_CONCURRENCY = int(os.getenv('CELERY_WORKER_CONCURRENCY', '1'))
+
 # ========== WEBHOOK SERVER CONFIGURATION ==========
 WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '0.0.0.0')
 WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8000'))

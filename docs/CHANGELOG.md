@@ -61,6 +61,7 @@ REDIS_URL=redis://localhost:6379/0
 CELERY_TASK_MAX_RETRIES=3
 CELERY_TASK_RETRY_DELAY=60
 CELERY_TASK_TIME_LIMIT=3600
+CELERY_WORKER_CONCURRENCY=1  # Procesamiento secuencial (CPU)
 
 # Webhook Server
 WEBHOOK_HOST=0.0.0.0
@@ -74,6 +75,7 @@ FLOWER_BASIC_AUTH=usuario:contraseña
 
 #### Configuración Centralizada en `config/settings.py`
 - Parámetros de Celery (reintentos, timeouts, serialización)
+- **Worker concurrency**: Configuración de procesamiento secuencial (1 video a la vez) optimizado para CPU
 - Configuración de Redis (broker, backend)
 - Configuración de webhook server (host, puerto, secreto)
 - Configuración de Flower (puerto, autenticación)
@@ -188,13 +190,14 @@ Youtube-to-notion-whisper/
 ### 📊 Beneficios de la Nueva Arquitectura
 
 1. **Automatización Completa**: Procesamiento automático desde Discord hasta Notion
-2. **Escalabilidad**: Múltiples workers pueden procesar tareas en paralelo
-3. **Resiliencia**: Reintentos automáticos con exponential backoff
-4. **Monitoreo**: Dashboard en tiempo real con Flower
-5. **Trazabilidad**: Logs detallados de cada paso del proceso
-6. **Flexibilidad**: Fácil añadir nuevos canales o bases de datos
-7. **Performance**: Procesamiento asíncrono no bloquea el sistema
-8. **API RESTful**: Endpoints documentados con Swagger/ReDoc
+2. **Procesamiento Secuencial**: Cola FIFO que procesa videos uno a la vez (optimizado para CPU)
+3. **Escalabilidad Opcional**: Configuración flexible para GPU con múltiples videos simultáneos
+4. **Resiliencia**: Reintentos automáticos con exponential backoff
+5. **Monitoreo**: Dashboard en tiempo real con Flower
+6. **Trazabilidad**: Logs detallados de cada paso del proceso
+7. **Flexibilidad**: Fácil añadir nuevos canales o bases de datos
+8. **Performance**: Procesamiento asíncrono no bloquea el sistema
+9. **API RESTful**: Endpoints documentados con Swagger/ReDoc
 
 ### 📝 Compatibilidad
 
