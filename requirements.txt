@@ -1,0 +1,21 @@
+# YouTube Download
+yt-dlp>=2024.0.0
+
+# Google Drive API
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Audio Transcription
+faster-whisper>=1.0.0
+av>=12.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Notion API (optional)
+notion-client>=2.0.0
+
+# Note: FFmpeg is required but must be installed separately on your system
+# Install FFmpeg from: https://ffmpeg.org/download.html

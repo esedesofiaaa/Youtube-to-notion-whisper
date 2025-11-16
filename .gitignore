@@ -1,0 +1,38 @@
+# Credentials and sensitive files
+credentials.json
+token.pickle
+token.json
+cookies.txt
+.env
+
+# Temporary and cache files
+*.pyc
+__pycache__/
+.pytest_cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data and output directories
+LinksYT.json
+videos/
+output/
+input/
+temp_downloads/
+channel_jsons/
+logs/
+
+# Backup files
+channel_jsons/backups/
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
