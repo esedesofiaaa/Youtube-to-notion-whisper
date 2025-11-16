@@ -2,21 +2,18 @@
 
 ![YouTube to Google Drive Automation](https://github.com/user-attachments/assets/921fa3bc-3384-4f14-9710-ea04fe08a448)
 
-Sistema automatizado de nivel empresarial para descargar videos de YouTube, transcribirlos con **Faster-Whisper** y organizarlos en Google Drive con arquitectura modular y resiliente.
+Sistema automatizado para descargar videos de YouTube, transcribirlos con **Faster-Whisper** y organizarlos en Google Drive.
 
 ## Tabla de Contenidos
 
 - [Descripcion General](#descripcion-general)
 - [Caracteristicas Principales](#caracteristicas-principales)
-- [Arquitectura Tecnica](#arquitectura-tecnica)
 - [Requisitos del Sistema](#requisitos-del-sistema)
 - [Instalacion](#instalacion)
 - [Configuracion](#configuracion)
 - [Guia de Uso](#guia-de-uso)
 - [Componentes del Sistema](#componentes-del-sistema)
 - [Resolucion de Problemas](#resolucion-de-problemas)
-- [Mejoras Futuras](#mejoras-futuras)
-- [Seguridad](#seguridad)
 - [Licencia](#licencia)
 
 ## Descripcion General
@@ -26,11 +23,9 @@ Este sistema proporciona una solucion completa para automatizar el procesamiento
 - Descarga automatizada de videos y audio desde YouTube
 - Transcripcion mediante IA con Faster-Whisper
 - Almacenamiento organizado en Google Drive
-- Integracion opcional con Notion para gestion de contenido
-- Sistema robusto de manejo de errores y reintentos
-- Arquitectura modular y escalable
+- Sistema robusto de manejo de errores
 
-El proyecto esta disenado para manejar desde procesamiento individual de archivos hasta flujos de trabajo complejos con multiples canales y cientos de videos.
+El proyecto esta disenado para procesar videos de YouTube de forma sencilla y eficiente.
 
 ## Caracteristicas Principales
 
@@ -68,42 +63,19 @@ El proyecto esta disenado para manejar desde procesamiento individual de archivo
 - **Archivos completos**: video, audio, transcripcion y enlace original
 - **Soporte para unidades compartidas**: compatible con Google Workspace
 
-### Sistema de Orquestacion Empresarial
+## Componentes del Sistema
 
-- **Procesamiento por lotes**: multiples canales y videos
-- **Gestion de estado**: seguimiento de progreso por video
-- **Reintentos automaticos**: hasta 3 intentos configurables
-- **Logging estructurado**: registros rotatorios con niveles configurables
-- **Integracion Notion**: sincronizacion con bases de datos
+### Scripts Principales
 
-## Arquitectura Tecnica
+- **DiscordToDrive.py**: Procesamiento principal de videos (descarga, transcripcion y subida)
+- **LocalTranscriber.py**: Herramienta CLI para transcripcion local de archivos existentes
 
-### Diagrama de Componentes
+### Flujo de Trabajo
 
-```
-youtube_processor/
-├── config/
-│   └── ConfigManager          # Gestion centralizada de configuracion
-├── extraction/
-│   └── NotionExtractor        # Extraccion de datos desde Notion
-└── utils/
-    ├── JSONGenerator          # Generacion y actualizacion de estado
-    ├── ChannelOrganizer       # Organizacion de videos por canal
-    ├── ProcessingCoordinator  # Coordinacion de ejecucion secuencial
-    └── ErrorHandler           # Manejo robusto de errores
-
-Scripts principales:
-├── DiscordToDrive.py          # Procesamiento principal de videos
-└── LocalTranscriber.py        # Herramienta CLI para transcripcion local
-```
-
-### Flujo de Datos
-
-1. **Entrada**: URLs de YouTube (manual o desde Notion)
-2. **Organizacion**: Agrupacion por canal y generacion de JSONs de estado
-3. **Procesamiento**: Descarga, transcripcion y subida secuencial
-4. **Actualizacion**: Marcado de completado/fallido en JSONs
-5. **Salida**: Archivos organizados en Google Drive + logs detallados
+1. **Entrada**: URLs de YouTube en `LinksYT.json`
+2. **Procesamiento**: Descarga de video/audio con yt-dlp
+3. **Transcripcion**: Conversion de audio a texto con Faster-Whisper
+4. **Salida**: Organizacion en Google Drive por fecha y titulo
 
 ### Tecnologias Clave
 
@@ -111,7 +83,6 @@ Scripts principales:
 - **Faster-Whisper**: Motor de transcripcion con CTranslate2
 - **yt-dlp**: Descarga robusta de YouTube
 - **Google Drive API**: Almacenamiento en la nube
-- **Notion API**: Gestion de contenido (opcional)
 - **FFmpeg**: Procesamiento de multimedia
 
 ## Requisitos del Sistema
@@ -188,23 +159,7 @@ python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 4. Descargar JSON y guardarlo como `credentials.json` en raiz
 5. Primera ejecucion: se abrira navegador para autorizar (genera `token.pickle`)
 
-### 2. Archivo `.env` (Opcional)
-
-```env
-# Notion API (Opcional)
-NOTION_TOKEN=secret_tu_token_aqui
-NOTION_DATABASE_ID=32_caracteres
-
-# Procesamiento
-START_DATE=2025-01-01
-BATCH_SIZE_PER_EXECUTION=10
-MAX_RETRY_ATTEMPTS=3
-
-# Whisper
-WHISPER_DEVICE=cpu  # o 'cuda' para GPU
-```
-
-### 3. Archivo `LinksYT.json`
+### 2. Archivo `LinksYT.json`
 
 ```json
 {
@@ -219,7 +174,7 @@ WHISPER_DEVICE=cpu  # o 'cuda' para GPU
 
 ## Guia de Uso
 
-### Modo 1: Procesamiento Simple
+### Modo 1: Procesamiento de Videos de YouTube
 
 ```bash
 # Verificar archivos
@@ -263,20 +218,7 @@ ls output/
 - `--input ./videos`: Directorio de entrada custom
 - `--output ./textos`: Directorio de salida custom
 
-### Modo 3: Orquestacion con Notion
-
-```bash
-# Generar JSONs de canales
-python -m youtube_processor.utils.channel_organizer
-
-# Procesar secuencialmente
-python -m youtube_processor.utils.processing_coordinator
-
-# Monitorear logs
-tail -f logs/youtube_processor.log
-```
-
-### Modo 4: Uso con GPU
+### Uso con GPU
 
 ```bash
 export WHISPER_DEVICE=cuda
@@ -288,11 +230,11 @@ python DiscordToDrive.py
 - GPU RTX 3060: 12-15 min (3x mas rapido)
 - GPU RTX 4090: 8-10 min (5x mas rapido)
 
-## Componentes del Sistema
+## Detalles de Componentes
 
 ### DiscordToDrive.py
 
-Script principal para descarga, transcripcion y subida.
+Script principal para descarga, transcripcion y subida a Google Drive.
 
 **Modelos Whisper disponibles**:
 
@@ -316,17 +258,6 @@ Herramienta CLI standalone para transcripcion local:
 - Usa modelo `medium` por defecto
 - Soporta deteccion automatica de idioma
 - Procesa multiples archivos en lote
-
-### youtube_processor/
-
-Paquete de orquestacion empresarial:
-
-- **ConfigManager**: Gestion centralizada de configuracion desde `.env`
-- **NotionExtractor**: Extraccion de videos desde bases de datos Notion
-- **JSONGenerator**: Generacion y actualizacion de estado por canal
-- **ChannelOrganizer**: Organizacion de videos por canal
-- **ProcessingCoordinator**: Ejecucion secuencial con reintentos
-- **ErrorHandler**: Clasificacion y registro de errores
 
 ## Resolucion de Problemas
 
@@ -366,16 +297,6 @@ export WHISPER_DEVICE=cpu
 pip install --upgrade yt-dlp
 ```
 
-### Notion API 401
-
-```bash
-# Verificar token
-grep NOTION_TOKEN .env
-
-# Token debe empezar con 'secret_' o 'ntn_'
-# Verificar permisos en https://www.notion.so/my-integrations
-```
-
 ### Transcripcion con repeticiones
 
 Ya implementado en codigo con parametros optimizados. Si persiste:
@@ -386,9 +307,13 @@ temperature=0.0,  # Mas determinista
 no_speech_threshold=0.4  # Mas agresivo
 ```
 
-### Tecnologias
+## Tecnologias
+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Descarga de YouTube
 - [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - Transcripcion IA
 - [Google Drive API](https://developers.google.com/drive) - Almacenamiento
-- [Notion API](https://developers.notion.com/) - Gestion de contenido
 - [FFmpeg](https://ffmpeg.org/) - Procesamiento multimedia
+
+## Licencia
+
+Este proyecto es de codigo abierto. Consulta el archivo LICENSE para mas detalles.

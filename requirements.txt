@@ -14,8 +14,5 @@ av>=12.0.0
 # Environment Variables
 python-dotenv>=1.0.0
 
-# Notion API (optional)
-notion-client>=2.0.0
-
 # Note: FFmpeg is required but must be installed separately on your system
 # Install FFmpeg from: https://ffmpeg.org/download.html
