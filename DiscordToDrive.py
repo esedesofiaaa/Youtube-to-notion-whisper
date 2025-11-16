@@ -9,6 +9,23 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from faster_whisper import WhisperModel  # Transcripción con faster-whisper
 
+# Módulos propios
+from logger_config import setup_logger
+from config import *
+from utils import (
+    retry_on_failure,
+    validate_ffmpeg,
+    validate_credentials,
+    validate_config_file,
+    sanitize_filename,
+    ensure_directory_exists,
+    safe_remove_file,
+    clean_temp_directory
+)
+
+# Configurar logger
+logger = setup_logger(__name__)
+
 def build_yt_opts(
     outtmpl=None,
     want_video=False,
@@ -18,44 +35,47 @@ def build_yt_opts(
 ):
     """
     Construye opciones robustas para yt-dlp evitando SABR y saltando players web problemáticos.
-    - Fuerza clients: android/ios/tv
-    - Ajusta headers tipo Android
-    - Retrys agresivos
-    - Cookies: usa cookies.txt si existe; si no, intenta leer del navegador (Chrome)
+
+    Args:
+        outtmpl (str, optional): Template de nombre de salida
+        want_video (bool): True para descargar video
+        want_audio (bool): True para descargar solo audio
+        prefer_mp4 (bool): Preferir formato MP4 para video
+        quiet (bool): Modo silencioso
+
+    Returns:
+        dict: Diccionario de opciones para yt-dlp
+
+    Features:
+        - Fuerza clients: android/ios/tv
+        - Ajusta headers tipo Android
+        - Reintentos agresivos
+        - Evita errores SABR
     """
     extractor_args = {
         "youtube": {
-            # evita clientes web con SABR
-            "player_skip": ["web_safari", "web"],
-            # orden de preferencia de clientes
-            "player_client": ["android", "ios", "tv"],
-            # (opcional) si el DASH molesta en tu red, puedes descomentar:
-            # "include_dash_manifest": ["True"],
-            # "include_hls_manifest": ["True"],
+            "player_skip": YT_DLP_PLAYER_SKIP,
+            "player_client": YT_DLP_PLAYER_CLIENT,
         }
     }
 
     http_headers = {
-        # UA Android para reforzar client
-        "User-Agent": "com.google.android.youtube/19.18.35 (Linux; U; Android 13)",
-        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": YT_DLP_USER_AGENT,
+        "Accept-Language": YT_DLP_ACCEPT_LANGUAGE,
     }
 
     ydl_opts = {
         "quiet": quiet,
-        "nocheckcertificate": False,  # Mejora seguridad; cámbialo a True solo si tu red rompe SSL
+        "nocheckcertificate": False,
         "extractor_args": extractor_args,
         "http_headers": http_headers,
-        "retries": 10,
-        "fragment_retries": 10,
+        "retries": YT_DLP_RETRIES,
+        "fragment_retries": YT_DLP_FRAGMENT_RETRIES,
         "concurrent_fragment_downloads": 1,
         "noprogress": quiet,
+        "socket_timeout": YT_DLP_SOCKET_TIMEOUT,
+        "force_ipv4": True,
     }
-
-    ydl_opts.update({
-        "socket_timeout": 20,
-        "force_ipv4": True,  # a veces IPv6 se cuelga
-    })
 
     if outtmpl:
         ydl_opts["outtmpl"] = outtmpl
@@ -70,43 +90,61 @@ def build_yt_opts(
         ydl_opts["format"] = "bestaudio/best"
         ydl_opts["postprocessors"] = [{
             "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
+            "preferredcodec": YT_DLP_AUDIO_CODEC,
+            "preferredquality": YT_DLP_AUDIO_QUALITY,
         }]
 
     return ydl_opts
 
-# Google Drive API setup
-SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_FILE = 'credentials.json'
-TOKEN_PICKLE = 'token.pickle'
 
 def get_drive_service():
-    """Authenticates and returns a Google Drive service object."""
+    """
+    Autentica y retorna un objeto de servicio de Google Drive API.
+
+    Returns:
+        Resource: Objeto de servicio de Google Drive API o None si falla
+
+    Raises:
+        Exception: Si hay un error al crear el servicio
+    """
     creds = None
     if os.path.exists(TOKEN_PICKLE):
         with open(TOKEN_PICKLE, 'rb') as token:
             creds = pickle.load(token)
+
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            logger.info("Refrescando credenciales de Google Drive...")
             creds.refresh(Request())
         else:
+            logger.info("Iniciando flujo de autenticación de Google Drive...")
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
+
         # Save the credentials for the next run
         with open(TOKEN_PICKLE, 'wb') as token:
             pickle.dump(creds, token)
+            logger.info("Credenciales guardadas en token.pickle")
+
     try:
         service = build('drive', 'v3', credentials=creds)
-        print("Google Drive API service created successfully.")
+        logger.info("✅ Servicio de Google Drive API creado exitosamente.")
         return service
     except Exception as e:
-        print(f"❌ Error creating Google Drive service: {e}")
+        logger.error(f"❌ Error al crear servicio de Google Drive: {e}", exc_info=True)
         return None
 
 def get_video_info(video_url):
-    """Fetches video title and upload date using yt-dlp con clientes sin SABR."""
+    """
+    Obtiene título y fecha de publicación de un video de YouTube usando yt-dlp.
+
+    Args:
+        video_url (str): URL del video de YouTube
+
+    Returns:
+        tuple: (título, fecha_publicación) o (None, None) si falla
+    """
     ydl_opts = build_yt_opts(quiet=True)
 
     try:
@@ -117,22 +155,34 @@ def get_video_info(video_url):
             # fecha: upload_date (YYYYMMDD) o release_timestamp/timestamp → YYYY-MM-DD
             upload_date_str = info.get("upload_date")
             if upload_date_str:
-                upload_date = datetime.datetime.strptime(upload_date_str, "%Y%m%d").strftime("%Y-%m-%d")
+                upload_date = datetime.datetime.strptime(upload_date_str, "%Y%m%d").strftime(DATE_FORMAT)
             else:
                 ts = info.get("release_timestamp") or info.get("timestamp")
                 if ts:
-                    upload_date = datetime.datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+                    upload_date = datetime.datetime.utcfromtimestamp(int(ts)).strftime(DATE_FORMAT)
                 else:
-                    # Último recurso: hoy (evitas saltarte el video)
-                    upload_date = datetime.datetime.now().strftime("%Y-%m-%d")
+                    # Último recurso: hoy
+                    upload_date = datetime.datetime.now().strftime(DATE_FORMAT)
+                    logger.warning(f"No se encontró fecha de publicación para {video_url}, usando fecha actual")
 
+            logger.info(f"📹 Video info: '{title}' ({upload_date})")
             return title, upload_date
     except Exception as e:
-        print(f"❌ Error fetching video info for {video_url}: {e}")
+        logger.error(f"❌ Error al obtener información del video {video_url}: {e}", exc_info=True)
         return None, None
 
 def create_drive_folder(service, folder_name, parent_folder_id):
-    """Creates a folder in Google Drive and returns its ID."""
+    """
+    Crea una carpeta en Google Drive y retorna su ID.
+
+    Args:
+        service: Servicio de Google Drive API
+        folder_name (str): Nombre de la carpeta a crear
+        parent_folder_id (str): ID de la carpeta padre
+
+    Returns:
+        str: ID de la carpeta creada o None si falla
+    """
     file_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder',
@@ -141,33 +191,59 @@ def create_drive_folder(service, folder_name, parent_folder_id):
     try:
         # Add supportsAllDrives=True to support shared drives
         folder = service.files().create(body=file_metadata, fields='id', supportsAllDrives=True).execute()
-        print(f"📁 Folder '{folder_name}' created with ID: {folder.get('id')}")
-        return folder.get('id')
+        folder_id = folder.get('id')
+        logger.info(f"📁 Carpeta '{folder_name}' creada con ID: {folder_id}")
+        return folder_id
     except Exception as e:
-        print(f"❌ Error creating folder '{folder_name}': {e}")
+        logger.error(f"❌ Error al crear carpeta '{folder_name}': {e}", exc_info=True)
         return None
 
+@retry_on_failure(max_retries=DRIVE_UPLOAD_MAX_RETRIES, delay=DRIVE_UPLOAD_RETRY_DELAY)
 def upload_file_to_drive(service, file_path, folder_id):
-    """Uploads a file to a specific Google Drive folder."""
+    """
+    Sube un archivo a una carpeta específica de Google Drive con reintentos automáticos.
+
+    Args:
+        service: Servicio de Google Drive API
+        file_path (str): Ruta del archivo a subir
+        folder_id (str): ID de la carpeta destino en Drive
+
+    Returns:
+        str: ID del archivo subido o None si falla
+
+    Note:
+        Esta función tiene reintentos automáticos configurados vía decorador.
+    """
     file_metadata = {
         'name': os.path.basename(file_path),
         'parents': [folder_id]
     }
     media = MediaFileUpload(file_path, resumable=True)
-    try:
-        # Add supportsAllDrives=True to support shared drives
-        file = service.files().create(body=file_metadata,
-                                      media_body=media,
-                                      fields='id',
-                                      supportsAllDrives=True).execute()
-        print(f"⬆️ File '{os.path.basename(file_path)}' uploaded with ID: {file.get('id')}")
-        return file.get('id')
-    except Exception as e:
-        print(f"❌ Error uploading file '{os.path.basename(file_path)}': {e}")
-        return None
+
+    # Add supportsAllDrives=True to support shared drives
+    file = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
+
+    file_id = file.get('id')
+    logger.info(f"⬆️ Archivo '{os.path.basename(file_path)}' subido con ID: {file_id}")
+    return file_id
 
 def check_file_exists_in_drive(service, file_name, folder_id):
-    """Checks if a file with the given name already exists in the specified folder."""
+    """
+    Verifica si un archivo con el nombre dado ya existe en la carpeta especificada.
+
+    Args:
+        service: Servicio de Google Drive API
+        file_name (str): Nombre del archivo a buscar
+        folder_id (str): ID de la carpeta donde buscar
+
+    Returns:
+        tuple: (exists: bool, file_id: str or None)
+    """
     try:
         # Search for files with the same name in the specified folder
         query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
@@ -178,20 +254,31 @@ def check_file_exists_in_drive(service, file_name, folder_id):
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
-        
+
         files = response.get('files', [])
         if files:
-            print(f"ℹ️ File '{file_name}' already exists in Drive with ID: {files[0].get('id')}")
-            return True, files[0].get('id')
+            file_id = files[0].get('id')
+            logger.info(f"ℹ️ Archivo '{file_name}' ya existe en Drive con ID: {file_id}")
+            return True, file_id
         return False, None
     except Exception as e:
-        print(f"⚠️ Error checking if file '{file_name}' exists: {e}")
+        logger.warning(f"⚠️ Error al verificar si existe '{file_name}': {e}")
         # If there's an error checking, we'll assume the file doesn't exist
         # and try to upload it anyway
         return False, None
 
 def download_video(video_url, save_path_base, upload_date):
-    """Downloads video como MP4 evitando SABR y priorizando AVC1+MP4A."""
+    """
+    Descarga video como MP4 evitando SABR y priorizando codecs AVC1+MP4A.
+
+    Args:
+        video_url (str): URL del video de YouTube
+        save_path_base (str): Ruta base para guardar el archivo
+        upload_date (str): Fecha de publicación en formato YYYY-MM-DD
+
+    Returns:
+        str: Ruta del archivo descargado o None si falla
+    """
     filename_base = f"{upload_date} - {os.path.basename(save_path_base)}"
     output_template = os.path.join(os.path.dirname(save_path_base), f"{filename_base}.%(ext)s")
 
@@ -204,6 +291,7 @@ def download_video(video_url, save_path_base, upload_date):
 
     downloaded_path = None
     try:
+        logger.info(f"⬇️ Descargando video: {video_url}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
 
@@ -217,7 +305,7 @@ def download_video(video_url, save_path_base, upload_date):
                         new_path = f"{base_path_with_date}.mp4"
                         os.rename(potential_path, new_path)
                         downloaded_path = new_path
-                        print(f"ℹ️ Renamed video to {os.path.basename(downloaded_path)}")
+                        logger.info(f"ℹ️ Video renombrado a {os.path.basename(downloaded_path)}")
                     break
 
             if not downloaded_path:
@@ -228,21 +316,31 @@ def download_video(video_url, save_path_base, upload_date):
                         new_path = f"{base_path_with_date}.mp4"
                         os.rename(potential_path, new_path)
                         downloaded_path = new_path
-                        print(f"ℹ️ Renamed video to {os.path.basename(downloaded_path)}")
+                        logger.info(f"ℹ️ Video renombrado a {os.path.basename(downloaded_path)}")
                         break
 
             if downloaded_path:
-                print(f"✅ Video downloaded: {os.path.basename(downloaded_path)}")
+                logger.info(f"✅ Video descargado: {os.path.basename(downloaded_path)}")
             else:
-                print(f"⚠️ Could not find downloaded video file for {video_url}")
+                logger.warning(f"⚠️ No se pudo encontrar archivo de video descargado para {video_url}")
 
     except Exception as e:
-        print(f"❌ Error downloading video for {video_url}: {e}")
+        logger.error(f"❌ Error al descargar video {video_url}: {e}", exc_info=True)
 
     return downloaded_path
 
 def download_audio(video_url, save_path_base, upload_date):
-    """Downloads audio como MP3."""
+    """
+    Descarga audio como MP3.
+
+    Args:
+        video_url (str): URL del video de YouTube
+        save_path_base (str): Ruta base para guardar el archivo
+        upload_date (str): Fecha de publicación en formato YYYY-MM-DD
+
+    Returns:
+        str: Ruta del archivo descargado o None si falla
+    """
     filename_base = f"{upload_date} - {os.path.basename(save_path_base)}"
     output_template = os.path.join(os.path.dirname(save_path_base), f"{filename_base}.%(ext)s")
 
@@ -254,6 +352,7 @@ def download_audio(video_url, save_path_base, upload_date):
 
     downloaded_path = None
     try:
+        logger.info(f"🎵 Descargando audio: {video_url}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
 
@@ -262,7 +361,7 @@ def download_audio(video_url, save_path_base, upload_date):
 
             if os.path.exists(potential_path):
                 downloaded_path = potential_path
-                print(f"✅ Audio downloaded: {os.path.basename(downloaded_path)}")
+                logger.info(f"✅ Audio descargado: {os.path.basename(downloaded_path)}")
             else:
                 original_base_path = ydl.prepare_filename(info).rsplit(".", 1)[0]
                 potential_path_original_ext = f"{original_base_path}.mp3"
@@ -270,89 +369,123 @@ def download_audio(video_url, save_path_base, upload_date):
                     new_path = f"{base_path_with_date}.mp3"
                     os.rename(potential_path_original_ext, new_path)
                     downloaded_path = new_path
-                    print(f"ℹ️ Renamed audio to {os.path.basename(downloaded_path)}")
+                    logger.info(f"ℹ️ Audio renombrado a {os.path.basename(downloaded_path)}")
                 else:
-                    print(f"⚠️ Could not find downloaded audio file for {video_url}")
+                    logger.warning(f"⚠️ No se pudo encontrar archivo de audio descargado para {video_url}")
 
     except Exception as e:
-        print(f"❌ Error downloading audio for {video_url}: {e}")
+        logger.error(f"❌ Error al descargar audio {video_url}: {e}", exc_info=True)
 
     return downloaded_path
 
 def transcribe_audio(model, audio_path, output_txt_path):
-    """Transcribes the audio file using faster-whisper and saves it to a text file."""
+    """
+    Transcribe un archivo de audio usando faster-whisper y guarda el resultado.
+
+    Args:
+        model: Modelo de WhisperModel
+        audio_path (str): Ruta del archivo de audio a transcribir
+        output_txt_path (str): Ruta donde guardar la transcripción
+
+    Returns:
+        str: Ruta del archivo de transcripción o None si falla
+    """
     try:
-        print(f"🎤 Starting transcription for: {os.path.basename(audio_path)}")
+        logger.info(f"🎤 Iniciando transcripción: {os.path.basename(audio_path)}")
 
         target_language = "en"  # Mantener en inglés
-
-        print(f"ℹ️ Procesando audio largo. Optimizando para evitar repeticiones con nuevos umbrales...")
+        logger.info(f"ℹ️ Procesando audio. Optimizando para evitar repeticiones...")
 
         # faster-whisper usa segments iterator en lugar de un dict result
         segments, info = model.transcribe(
             audio_path,
             language=target_language,
-            vad_filter=False,  # VAD deshabilitado (requiere onnxruntime no disponible en Python 3.14)
-            beam_size=5,  # Balance entre velocidad y calidad
-            condition_on_previous_text=False,  # Sin contexto previo para evitar repeticiones
-            temperature=0.1,  # Baja temperatura para más determinismo
-            compression_ratio_threshold=2.0,  # Control de periodos silenciosos
-            log_prob_threshold=-0.6,  # Umbral de probabilidad logarítmica
-            no_speech_threshold=0.2  # Umbral para detectar segmentos sin habla
+            **WHISPER_PARAMS
         )
-        
-        print(f"ℹ️ Idioma detectado: {info.language} (probabilidad: {info.language_probability:.2f})")
-        print("=" * 80)
-        print("📝 TRANSCRIPCIÓN EN VIVO:")
-        print("=" * 80)
-        
+
+        logger.info(f"ℹ️ Idioma detectado: {info.language} (probabilidad: {info.language_probability:.2f})")
+        logger.info("=" * 80)
+        logger.info("📝 TRANSCRIPCIÓN EN VIVO:")
+        logger.info("=" * 80)
+
         # Recolectar todos los segmentos mostrando en tiempo real
         transcription_text = ""
         for segment in segments:
             # Mostrar cada segmento en vivo
-            print(segment.text, end='', flush=True)
+            logger.info(segment.text)
             transcription_text += segment.text
-        
-        print("\n" + "=" * 80)
+
+        logger.info("=" * 80)
 
         with open(output_txt_path, 'w', encoding='utf-8') as f:
             f.write(transcription_text.strip())
-        print(f"✅ Transcripción guardada en: {os.path.basename(output_txt_path)}")
+        logger.info(f"✅ Transcripción guardada: {os.path.basename(output_txt_path)}")
         return output_txt_path
     except Exception as e:
-        print(f"❌ Error during transcription for {os.path.basename(audio_path)}: {e}")
+        logger.error(f"❌ Error durante transcripción de {os.path.basename(audio_path)}: {e}", exc_info=True)
         return None
 
 def create_link_file(video_url, output_path):
-    """Creates a text file containing the YouTube URL."""
+    """
+    Crea un archivo de texto conteniendo la URL de YouTube.
+
+    Args:
+        video_url (str): URL del video de YouTube
+        output_path (str): Ruta donde guardar el archivo
+
+    Returns:
+        str: Ruta del archivo creado o None si falla
+    """
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(f"YouTube URL: {video_url}\n")
             f.write(f"Este archivo fue generado automáticamente el {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"🔗 Link file created: {os.path.basename(output_path)}")
+        logger.info(f"🔗 Archivo de link creado: {os.path.basename(output_path)}")
         return output_path
     except Exception as e:
-        print(f"❌ Error creating link file: {e}")
+        logger.error(f"❌ Error al crear archivo de link: {e}", exc_info=True)
         return None
 
 def main():
+    """
+    Función principal que coordina el proceso de descarga, transcripción y subida a Drive.
+    """
+    logger.info("=" * 80)
+    logger.info("🚀 Iniciando YouTube to Google Drive Automation")
+    logger.info("=" * 80)
+
+    # Validar dependencias
+    logger.info("🔍 Validando dependencias del sistema...")
+    if not validate_ffmpeg():
+        logger.error("❌ FFmpeg es requerido. Instalalo desde: https://ffmpeg.org/download.html")
+        return
+
+    if not validate_credentials(CREDENTIALS_FILE):
+        return
+
+    if not validate_config_file(LINKS_CONFIG_FILE):
+        return
+
     # Load configuration
     try:
-        with open("LinksYT.json", 'r') as f:
+        with open(LINKS_CONFIG_FILE, 'r') as f:
             config = json.load(f)
         parent_folder_id = config.get("parent_folder_id")
         video_urls = config.get("video_urls", [])
+
         if not parent_folder_id:
-            print("❌ Error: 'parent_folder_id' not found in LinksYT.json")
+            logger.error(f"❌ 'parent_folder_id' no encontrado en {LINKS_CONFIG_FILE}")
             return
         if not video_urls:
-            print("ℹ️ No video URLs found in LinksYT.json")
+            logger.info(f"ℹ️ No se encontraron URLs en {LINKS_CONFIG_FILE}")
             return
+
+        logger.info(f"✅ Configuración cargada: {len(video_urls)} video(s) a procesar")
     except FileNotFoundError:
-        print("❌ Error: LinksYT.json not found.")
+        logger.error(f"❌ Archivo no encontrado: {LINKS_CONFIG_FILE}")
         return
     except json.JSONDecodeError:
-        print("❌ Error: LinksYT.json is not valid JSON.")
+        logger.error(f"❌ {LINKS_CONFIG_FILE} no es un JSON válido")
         return
 
     # Get Google Drive service
@@ -361,47 +494,45 @@ def main():
         return
 
     # --- Whisper Model Loading ---
-    # --- Whisper Model Loading ---
-    # Usar CPU por defecto. Para GPU: export WHISPER_DEVICE=cuda
-    device = os.environ.get('WHISPER_DEVICE', 'cpu')
-    compute_type = "float16" if device == "cuda" else "int8"
-    
-    print(f"ℹ️ Cargando modelo Whisper en {device.upper()}...")
-    if device == "cpu":
-        print("ℹ️ Para usar GPU: export WHISPER_DEVICE=cuda")
-    
-    whisper_model = WhisperModel("small", device=device, compute_type=compute_type)
-    print(f"✅ Whisper 'small' cargado en {device.upper()}.")
-    # --- End Whisper Model Loading ---
+    logger.info(f"ℹ️ Cargando modelo Whisper '{WHISPER_MODEL_DEFAULT}' en {WHISPER_DEVICE.upper()}...")
+    if WHISPER_DEVICE == "cpu":
+        logger.info("ℹ️ Para usar GPU: export WHISPER_DEVICE=cuda")
+
+    whisper_model = WhisperModel(
+        WHISPER_MODEL_DEFAULT,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE
+    )
+    logger.info(f"✅ Modelo Whisper '{WHISPER_MODEL_DEFAULT}' cargado en {WHISPER_DEVICE.upper()}.")
 
     # Create a temporary directory for downloads
-    temp_download_dir = "temp_downloads"
-    if not os.path.exists(temp_download_dir):
-        os.makedirs(temp_download_dir)
+    ensure_directory_exists(TEMP_DOWNLOAD_DIR)
 
     # Process each video URL
-    for video_url in video_urls:
-        print(f"\nProcessing: {video_url}")
+    for idx, video_url in enumerate(video_urls, 1):
+        logger.info("=" * 80)
+        logger.info(f"📹 Procesando video {idx}/{len(video_urls)}: {video_url}")
+        logger.info("=" * 80)
+
         title, upload_date = get_video_info(video_url)
 
         if not title:
-            print(f"⚠️ Skipping video due to missing title: {video_url}")
+            logger.warning(f"⚠️ Saltando video por falta de título: {video_url}")
             continue
-        # Si no hay fecha, ya la calculamos en get_video_info; no saltamos.
 
-        # Sanitize title for file/folder names (replace invalid characters)
-        safe_title = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
+        # Sanitize title for file/folder names
+        safe_title = sanitize_filename(title)
         # Folder name format: Date - Title
-        folder_name = f"{upload_date} - {safe_title}"
+        folder_name = FOLDER_NAME_FORMAT.format(date=upload_date, title=safe_title)
 
         # Create folder in Google Drive
         drive_folder_id = create_drive_folder(drive_service, folder_name, parent_folder_id)
         if not drive_folder_id:
-            print(f"⚠️ Skipping video due to error creating Drive folder: {video_url}")
+            logger.warning(f"⚠️ Saltando video por error al crear carpeta en Drive: {video_url}")
             continue
 
         # Define local file base path (used by download functions to construct full name)
-        local_base_path_without_date = os.path.join(temp_download_dir, safe_title)
+        local_base_path_without_date = os.path.join(TEMP_DOWNLOAD_DIR, safe_title)
 
         # Download video (pass upload_date)
         video_path = download_video(video_url, local_base_path_without_date, upload_date)
@@ -409,29 +540,28 @@ def main():
             # Check if video already exists in Drive
             video_filename = os.path.basename(video_path)
             video_exists, _ = check_file_exists_in_drive(drive_service, video_filename, drive_folder_id)
-            
+
             if not video_exists:
-                upload_file_to_drive(drive_service, video_path, drive_folder_id)
+                try:
+                    upload_file_to_drive(drive_service, video_path, drive_folder_id)
+                except Exception as e:
+                    logger.error(f"❌ Error al subir video: {e}", exc_info=True)
             else:
-                print(f"⏭️ Skipping upload of video file that already exists in Drive: {video_filename}")
-            
+                logger.info(f"⏭️ Archivo de video ya existe en Drive, saltando: {video_filename}")
+
             # Delete local copy regardless
-            try:
-                os.remove(video_path)
-                print(f"🗑️ Deleted local video: {video_filename}")
-            except OSError as e:
-                print(f"⚠️ Error deleting local video file {video_path}: {e}")
+            safe_remove_file(video_path)
         else:
-            print(f"⚠️ Video download failed or file not found for {video_url}, skipping upload.")
+            logger.warning(f"⚠️ Descarga de video falló o archivo no encontrado para {video_url}, saltando subida.")
 
         # Download audio (pass upload_date)
         audio_path = download_audio(video_url, local_base_path_without_date, upload_date)
-        transcription_path = None # Initialize transcription path
+        transcription_path = None  # Initialize transcription path
+
         if audio_path and os.path.exists(audio_path):
             # --- Transcription Step ---
-            # Construct the output path for the transcription .txt file
-            txt_filename = f"{upload_date} - {safe_title}.txt"
-            local_txt_path = os.path.join(temp_download_dir, txt_filename)
+            txt_filename = TRANSCRIPTION_FILE_FORMAT.format(date=upload_date, title=safe_title)
+            local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
 
             # Transcribe the downloaded audio
             transcription_path = transcribe_audio(whisper_model, audio_path, local_txt_path)
@@ -440,70 +570,67 @@ def main():
             # Upload audio file
             audio_filename = os.path.basename(audio_path)
             audio_exists, _ = check_file_exists_in_drive(drive_service, audio_filename, drive_folder_id)
-            
+
             if not audio_exists:
-                upload_file_to_drive(drive_service, audio_path, drive_folder_id)
+                try:
+                    upload_file_to_drive(drive_service, audio_path, drive_folder_id)
+                except Exception as e:
+                    logger.error(f"❌ Error al subir audio: {e}", exc_info=True)
             else:
-                print(f"⏭️ Skipping upload of audio file that already exists in Drive: {audio_filename}")
-                
-            try:
-                os.remove(audio_path)
-                print(f"🗑️ Deleted local audio: {os.path.basename(audio_path)}")
-            except OSError as e:
-                print(f"⚠️ Error deleting local audio file {audio_path}: {e}")
+                logger.info(f"⏭️ Archivo de audio ya existe en Drive, saltando: {audio_filename}")
+
+            # Delete local copy
+            safe_remove_file(audio_path)
         else:
-             print(f"⚠️ Audio download failed or file not found for {video_url}, skipping upload and transcription.")
+            logger.warning(f"⚠️ Descarga de audio falló o archivo no encontrado para {video_url}, saltando subida y transcripción.")
 
         # Upload transcription file if it exists
         if transcription_path and os.path.exists(transcription_path):
             # Check if transcription already exists in Drive
             transcription_filename = os.path.basename(transcription_path)
             transcription_exists, _ = check_file_exists_in_drive(drive_service, transcription_filename, drive_folder_id)
-            
+
             if not transcription_exists:
-                upload_file_to_drive(drive_service, transcription_path, drive_folder_id)
+                try:
+                    upload_file_to_drive(drive_service, transcription_path, drive_folder_id)
+                except Exception as e:
+                    logger.error(f"❌ Error al subir transcripción: {e}", exc_info=True)
             else:
-                print(f"⏭️ Skipping upload of transcription file that already exists in Drive: {transcription_filename}")
-            
-            # Delete local copy regardless
-            try:
-                os.remove(transcription_path)
-                print(f"🗑️ Deleted local transcription: {os.path.basename(transcription_path)}")
-            except OSError as e:
-                print(f"⚠️ Error deleting local transcription file {transcription_path}: {e}")
-        elif audio_path and os.path.exists(audio_path): # Only print if audio existed but transcription failed
-             print(f"⚠️ Transcription failed for {video_url}, skipping upload.")
+                logger.info(f"⏭️ Archivo de transcripción ya existe en Drive, saltando: {transcription_filename}")
+
+            # Delete local copy
+            safe_remove_file(transcription_path)
+        elif audio_path:  # Only warn if audio existed but transcription failed
+            logger.warning(f"⚠️ Transcripción falló para {video_url}, saltando subida.")
 
         # Create and upload link file
-        link_filename = f"{upload_date} - {safe_title} - Link.txt"
-        local_link_path = os.path.join(temp_download_dir, link_filename)
+        link_filename = LINK_FILE_FORMAT.format(date=upload_date, title=safe_title)
+        local_link_path = os.path.join(TEMP_DOWNLOAD_DIR, link_filename)
         link_file_path = create_link_file(video_url, local_link_path)
+
         if link_file_path and os.path.exists(link_file_path):
             # Check if link file already exists in Drive
             link_file_exists, _ = check_file_exists_in_drive(drive_service, os.path.basename(link_file_path), drive_folder_id)
-            
+
             if not link_file_exists:
-                upload_file_to_drive(drive_service, link_file_path, drive_folder_id)
+                try:
+                    upload_file_to_drive(drive_service, link_file_path, drive_folder_id)
+                except Exception as e:
+                    logger.error(f"❌ Error al subir archivo de link: {e}", exc_info=True)
             else:
-                print(f"⏭️ Skipping upload of link file that already exists in Drive: {os.path.basename(link_file_path)}")
-            
-            # Delete local copy regardless
-            try:
-                os.remove(link_file_path)
-                print(f"🗑️ Deleted local link file: {os.path.basename(link_file_path)}")
-            except OSError as e:
-                print(f"⚠️ Error deleting local link file {link_file_path}: {e}")
+                logger.info(f"⏭️ Archivo de link ya existe en Drive, saltando: {os.path.basename(link_file_path)}")
+
+            # Delete local copy
+            safe_remove_file(link_file_path)
+
+        logger.info(f"✅ Video procesado completamente: {folder_name}")
 
     # Clean up temporary directory if empty
-    try:
-        if not os.listdir(temp_download_dir):
-            os.rmdir(temp_download_dir)
-        else:
-            print(f"⚠️ Temporary download directory '{temp_download_dir}' not empty, manual cleanup might be needed.")
-    except OSError as e:
-         print(f"⚠️ Error removing temporary directory '{temp_download_dir}': {e}")
+    clean_temp_directory(TEMP_DOWNLOAD_DIR)
 
-    print("\n✅ Processing complete.")
+    logger.info("=" * 80)
+    logger.info("✅ Procesamiento completado exitosamente")
+    logger.info("=" * 80)
 
 if __name__ == '__main__':
     main()
