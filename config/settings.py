@@ -91,3 +91,38 @@ LINK_FILE_FORMAT = "{date} - {title} - Link.txt"
 # Extensiones de archivo soportadas
 AUDIO_EXTENSIONS = ('.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg')
 VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv')
+
+# ========== CELERY & REDIS CONFIGURATION ==========
+# Redis URL para broker y backend de Celery
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
+
+# Configuración de tareas de Celery
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+
+# Configuración de reintentos para tareas
+CELERY_TASK_MAX_RETRIES = int(os.getenv('CELERY_TASK_MAX_RETRIES', '3'))
+CELERY_TASK_RETRY_DELAY = int(os.getenv('CELERY_TASK_RETRY_DELAY', '60'))  # 60 segundos
+
+# Timeout para tareas (en segundos) - videos pueden tardar mucho
+CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '3600'))  # 1 hora
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '3300'))  # 55 minutos
+
+# Configuración de workers
+# IMPORTANTE: Para CPU, usar concurrency=1 (procesamiento secuencial)
+# Para GPU, se puede aumentar a 2-4 dependiendo de VRAM disponible
+CELERY_WORKER_CONCURRENCY = int(os.getenv('CELERY_WORKER_CONCURRENCY', '1'))
+
+# ========== WEBHOOK SERVER CONFIGURATION ==========
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '0.0.0.0')
+WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8000'))
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'change-this-secret-in-production')  # Para validar webhooks
+
+# ========== FLOWER DASHBOARD ==========
+FLOWER_PORT = int(os.getenv('FLOWER_PORT', '5555'))
+FLOWER_BASIC_AUTH = os.getenv('FLOWER_BASIC_AUTH', '')  # Format: "user:password"
