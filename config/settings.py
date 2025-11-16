@@ -1,27 +1,32 @@
 """
 Configuración centralizada para el proyecto YouTube to Google Drive.
+Usa variables de entorno desde archivo .env
 """
 import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # ========== GOOGLE DRIVE API ==========
 SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_FILE = 'credentials.json'
-TOKEN_PICKLE = 'token.pickle'
+CREDENTIALS_FILE = os.getenv('CREDENTIALS_FILE', 'credentials.json')
+TOKEN_PICKLE = os.getenv('TOKEN_PICKLE', 'token.pickle')
 
 # Configuración de reintentos para uploads a Drive
-DRIVE_UPLOAD_MAX_RETRIES = 3
-DRIVE_UPLOAD_RETRY_DELAY = 2  # segundos
+DRIVE_UPLOAD_MAX_RETRIES = int(os.getenv('DRIVE_UPLOAD_MAX_RETRIES', '3'))
+DRIVE_UPLOAD_RETRY_DELAY = int(os.getenv('DRIVE_UPLOAD_RETRY_DELAY', '2'))
 
 # ========== WHISPER TRANSCRIPTION ==========
-# Dispositivo: 'cpu' o 'cuda' (puede ser sobrescrito por variable de entorno WHISPER_DEVICE)
-WHISPER_DEVICE = os.environ.get('WHISPER_DEVICE', 'cpu')
+# Dispositivo: 'cpu' o 'cuda'
+WHISPER_DEVICE = os.getenv('WHISPER_DEVICE', 'cpu')
 
 # Tipo de cómputo según dispositivo
 WHISPER_COMPUTE_TYPE = "float16" if WHISPER_DEVICE == "cuda" else "int8"
 
 # Modelos disponibles: tiny, base, small, medium, large
-WHISPER_MODEL_DEFAULT = "small"  # Para DiscordToDrive.py
-WHISPER_MODEL_LOCAL = "medium"   # Para LocalTranscriber.py
+WHISPER_MODEL_DEFAULT = os.getenv('WHISPER_MODEL_DEFAULT', 'small')
+WHISPER_MODEL_LOCAL = os.getenv('WHISPER_MODEL_LOCAL', 'medium')
 
 # Parámetros de transcripción optimizados
 WHISPER_PARAMS = {
@@ -36,40 +41,43 @@ WHISPER_PARAMS = {
 
 # ========== YT-DLP CONFIGURATION ==========
 # Headers para evitar bloqueos de YouTube
-YT_DLP_USER_AGENT = "com.google.android.youtube/19.18.35 (Linux; U; Android 13)"
-YT_DLP_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
+YT_DLP_USER_AGENT = os.getenv(
+    'YT_DLP_USER_AGENT',
+    "com.google.android.youtube/19.18.35 (Linux; U; Android 13)"
+)
+YT_DLP_ACCEPT_LANGUAGE = os.getenv('YT_DLP_ACCEPT_LANGUAGE', "en-US,en;q=0.9")
 
 # Configuración de reintentos
-YT_DLP_RETRIES = 10
-YT_DLP_FRAGMENT_RETRIES = 10
-YT_DLP_SOCKET_TIMEOUT = 20
+YT_DLP_RETRIES = int(os.getenv('YT_DLP_RETRIES', '10'))
+YT_DLP_FRAGMENT_RETRIES = int(os.getenv('YT_DLP_FRAGMENT_RETRIES', '10'))
+YT_DLP_SOCKET_TIMEOUT = int(os.getenv('YT_DLP_SOCKET_TIMEOUT', '20'))
 
 # Configuración de clientes (evita SABR)
 YT_DLP_PLAYER_SKIP = ["web_safari", "web"]
 YT_DLP_PLAYER_CLIENT = ["android", "ios", "tv"]
 
 # Configuración de audio
-YT_DLP_AUDIO_CODEC = "mp3"
-YT_DLP_AUDIO_QUALITY = "192"
+YT_DLP_AUDIO_CODEC = os.getenv('YT_DLP_AUDIO_CODEC', 'mp3')
+YT_DLP_AUDIO_QUALITY = os.getenv('YT_DLP_AUDIO_QUALITY', '192')
 
 # ========== DIRECTORIOS ==========
-TEMP_DOWNLOAD_DIR = "temp_downloads"
-INPUT_DIR = "input"
-OUTPUT_DIR = "output"
-TEMP_DIR = "temp"
-LOG_DIR = "logs"
+TEMP_DOWNLOAD_DIR = os.getenv('TEMP_DOWNLOAD_DIR', 'temp_downloads')
+INPUT_DIR = os.getenv('INPUT_DIR', 'input')
+OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
+TEMP_DIR = os.getenv('TEMP_DIR', 'temp')
+LOG_DIR = os.getenv('LOG_DIR', 'logs')
 
 # ========== ARCHIVOS DE CONFIGURACIÓN ==========
-LINKS_CONFIG_FILE = "LinksYT.json"
-CHANNEL_MAPPING_FILE = "channel_drive_mapping.json"
+LINKS_CONFIG_FILE = os.getenv('LINKS_CONFIG_FILE', 'LinksYT.json')
+CHANNEL_MAPPING_FILE = os.getenv('CHANNEL_MAPPING_FILE', 'channel_drive_mapping.json')
 
 # ========== LOGGING ==========
 # Nivel de logging: DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
 # ========== FFMPEG ==========
-FFMPEG_AUDIO_QUALITY = '0'  # 0 = máxima calidad
-FFMPEG_ID3_VERSION = '3'    # Compatibilidad de tags
+FFMPEG_AUDIO_QUALITY = os.getenv('FFMPEG_AUDIO_QUALITY', '0')  # 0 = máxima calidad
+FFMPEG_ID3_VERSION = os.getenv('FFMPEG_ID3_VERSION', '3')      # Compatibilidad de tags
 
 # ========== FORMATO DE NOMBRES ==========
 DATE_FORMAT = "%Y-%m-%d"
