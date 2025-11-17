@@ -1,112 +1,112 @@
 # YouTube to Google Drive Automation
 
-Sistema automatizado para descargar videos de YouTube, transcribirlos con **Faster-Whisper** y organizarlos en Google Drive.
+Automated system to download YouTube videos, transcribe them with **Faster-Whisper**, and organize them in Google Drive.
 
-## Tabla de Contenidos
+## Table of Contents
 
-- [Descripcion General](#descripcion-general)
-- [Caracteristicas Principales](#caracteristicas-principales)
-- [Requisitos del Sistema](#requisitos-del-sistema)
-- [Instalacion](#instalacion)
-- [Configuracion](#configuracion)
-- [Guia de Uso](#guia-de-uso)
-- [Componentes del Sistema](#componentes-del-sistema)
-- [Resolucion de Problemas](#resolucion-de-problemas)
-- [Licencia](#licencia)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage Guide](#usage-guide)
+- [System Components](#system-components)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-## Descripcion General
+## Overview
 
-Este sistema proporciona una solucion completa para automatizar el procesamiento de contenido de YouTube:
+This system provides a complete solution to automate YouTube content processing:
 
-- Descarga automatizada de videos y audio desde YouTube
-- Transcripcion mediante IA con Faster-Whisper
-- Almacenamiento organizado en Google Drive
-- Sistema robusto de manejo de errores
+- Automated video and audio download from YouTube
+- AI-powered transcription with Faster-Whisper
+- Organized storage in Google Drive
+- Robust error handling system
 
-El proyecto esta disenado para procesar videos de YouTube de forma sencilla y eficiente.
+The project is designed to process YouTube videos in a simple and efficient way.
 
-## Caracteristicas Principales
+## Key Features
 
-### Procesamiento de Video
+### Video Processing
 
-- **Descarga optimizada** con `yt-dlp` y soporte para clientes moviles (evita errores SABR)
-- **Formatos flexibles**: MP4 para video, MP3 para audio
-- **Extraccion de metadatos**: titulo, fecha de publicacion, URL original
-- **Gestion de nombres**: sanitizacion automatica y formato `YYYY-MM-DD - Titulo`
+- **Optimized download** with `yt-dlp` and mobile client support (avoids SABR errors)
+- **Flexible formats**: MP4 for video, MP3 for audio
+- **Metadata extraction**: title, publish date, original URL
+- **Name management**: automatic sanitization and `YYYY-MM-DD - Title` format
 
-### Transcripcion con Faster-Whisper
+### Transcription with Faster-Whisper
 
-#### Ventajas sobre OpenAI Whisper Clasico
+#### Advantages over Classic OpenAI Whisper
 
-| Caracteristica | Faster-Whisper | OpenAI Whisper |
-|---------------|----------------|----------------|
-| Compatibilidad Python | 3.10 - 3.14+ | 3.10 - 3.13 |
-| Velocidad CPU | **2.67x mas rapido** | Baseline |
-| Velocidad GPU | **3-4x mas rapido** | Baseline |
-| Uso de VRAM | **50% menos (1GB)** | 2GB (medium) |
-| Transcripcion en vivo | Si | No |
+| Feature | Faster-Whisper | OpenAI Whisper |
+|---------|----------------|----------------|
+| Python Compatibility | 3.10 - 3.14+ | 3.10 - 3.13 |
+| CPU Speed | **2.67x faster** | Baseline |
+| GPU Speed | **3-4x faster** | Baseline |
+| VRAM Usage | **50% less (1GB)** | 2GB (medium) |
+| Live Transcription | Yes | No |
 
-#### Rendimiento Real
+#### Real Performance
 
-| Hardware | Video 2h | Modelo | Optimizacion |
-|----------|----------|--------|--------------|
+| Hardware | 2h Video | Model | Optimization |
+|----------|----------|-------|--------------|
 | CPU (8 cores) | 45 min | medium | int8 |
 | GPU RTX 3060 | 12-15 min | medium | float16 |
 | GPU RTX 4090 | 8-10 min | medium | float16 |
 
-### Organizacion en Google Drive
+### Google Drive Organization
 
-- **Estructura jerarquica**: carpetas por fecha y titulo
-- **Prevencion de duplicados**: verificacion antes de subir
-- **Archivos completos**: video, audio, transcripcion y enlace original
-- **Soporte para unidades compartidas**: compatible con Google Workspace
+- **Hierarchical structure**: folders by date and title
+- **Duplicate prevention**: verification before upload
+- **Complete files**: video, audio, transcription and original link
+- **Shared drive support**: compatible with Google Workspace
 
-## Componentes del Sistema
+## System Components
 
-### Scripts Principales
+### Main Scripts
 
-- **DiscordToDrive.py**: Procesamiento principal de videos (descarga, transcripcion y subida)
-- **LocalTranscriber.py**: Herramienta CLI para transcripcion local de archivos existentes
+- **DiscordToDrive.py**: Main video processing (download, transcription and upload)
+- **LocalTranscriber.py**: CLI tool for local transcription of existing files
 
-### Flujo de Trabajo
+### Workflow
 
-1. **Entrada**: URLs de YouTube en `LinksYT.json`
-2. **Procesamiento**: Descarga de video/audio con yt-dlp
-3. **Transcripcion**: Conversion de audio a texto con Faster-Whisper
-4. **Salida**: Organizacion en Google Drive por fecha y titulo
+1. **Input**: YouTube URLs in `LinksYT.json`
+2. **Processing**: Video/audio download with yt-dlp
+3. **Transcription**: Audio to text conversion with Faster-Whisper
+4. **Output**: Organization in Google Drive by date and title
 
-### Tecnologias Clave
+### Key Technologies
 
-- **Python 3.10+**: Lenguaje principal
-- **Faster-Whisper**: Motor de transcripcion con CTranslate2
-- **yt-dlp**: Descarga robusta de YouTube
-- **Google Drive API**: Almacenamiento en la nube
-- **FFmpeg**: Procesamiento de multimedia
+- **Python 3.10+**: Main language
+- **Faster-Whisper**: Transcription engine with CTranslate2
+- **yt-dlp**: Robust YouTube download
+- **Google Drive API**: Cloud storage
+- **FFmpeg**: Multimedia processing
 
-## Requisitos del Sistema
+## System Requirements
 
-### Software Obligatorio
+### Required Software
 
-- **Python**: 3.10 o superior (3.14 totalmente soportado)
-- **FFmpeg**: Para procesamiento de audio/video
-- **Git**: Para clonar el repositorio
+- **Python**: 3.10 or higher (3.14 fully supported)
+- **FFmpeg**: For audio/video processing
+- **Git**: To clone the repository
 
-### Hardware Recomendado
+### Recommended Hardware
 
-#### Minimo (CPU)
-- Procesador: 4+ cores
+#### Minimum (CPU)
+- Processor: 4+ cores
 - RAM: 8 GB
-- Almacenamiento: 20 GB libres
+- Storage: 20 GB free
 
-#### Optimo (GPU)
-- GPU: NVIDIA con 4+ GB VRAM
-- CUDA: 11.8 o superior
+#### Optimal (GPU)
+- GPU: NVIDIA with 4+ GB VRAM
+- CUDA: 11.8 or higher
 - RAM: 16 GB
-- Almacenamiento: 50 GB libres (SSD recomendado)
+- Storage: 50 GB free (SSD recommended)
 
-## Instalacion
+## Installation
 
-### 1. Instalar FFmpeg
+### 1. Install FFmpeg
 
 **Linux (Ubuntu/Debian)**:
 ```bash
@@ -119,199 +119,199 @@ ffmpeg -version
 brew install ffmpeg
 ```
 
-**Windows**: Descargar desde [ffmpeg.org](https://ffmpeg.org/download.html)
+**Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-### 2. Clonar el Repositorio
+### 2. Clone the Repository
 
 ```bash
 git clone https://github.com/esedesofiaaa/Youtube-to-notion-whisper.git
 cd Youtube-to-notion-whisper
 ```
 
-### 3. Crear Entorno Virtual
+### 3. Create Virtual Environment
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 ```
 
-### 4. Instalar Dependencias
+### 4. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Para GPU (NVIDIA con CUDA)**:
+**For GPU (NVIDIA with CUDA)**:
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 ```
 
-## Configuracion
+## Configuration
 
 ### 1. Google Drive API
 
-1. Ir a [Google Cloud Console](https://console.cloud.google.com/)
-2. Crear proyecto y habilitar **Google Drive API**
-3. Crear credenciales **OAuth 2.0** (Desktop Application)
-4. Descargar JSON y guardarlo como `credentials.json` en raiz
-5. Primera ejecucion: se abrira navegador para autorizar (genera `token.pickle`)
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create project and enable **Google Drive API**
+3. Create **OAuth 2.0** credentials (Desktop Application)
+4. Download JSON and save it as `credentials.json` in root
+5. First run: browser will open for authorization (generates `token.pickle`)
 
-### 2. Archivo `LinksYT.json`
+### 2. `LinksYT.json` File
 
 ```json
 {
-  "parent_folder_id": "ID_CARPETA_DRIVE",
+  "parent_folder_id": "DRIVE_FOLDER_ID",
   "video_urls": [
     "https://www.youtube.com/watch?v=VIDEO_ID"
   ]
 }
 ```
 
-**Obtener ID de carpeta**: URL de Drive `https://drive.google.com/drive/folders/ID_AQUI`
+**Get folder ID**: Drive URL `https://drive.google.com/drive/folders/ID_HERE`
 
-## Guia de Uso
+## Usage Guide
 
-### Modo 1: Procesamiento de Videos de YouTube
+### Mode 1: YouTube Video Processing
 
 ```bash
-# Verificar archivos
+# Verify files
 ls credentials.json LinksYT.json
 
-# Ejecutar
+# Execute
 python DiscordToDrive.py
 ```
 
-**Salida esperada**:
+**Expected output**:
 ```
-Processing: https://www.youtube.com/watch?v=ejemplo
-Folder '2025-11-15 - Titulo' created
-Video downloaded: 2025-11-15 - Titulo.mp4
-Audio downloaded: 2025-11-15 - Titulo.mp3
+Processing: https://www.youtube.com/watch?v=example
+Folder '2025-11-15 - Title' created
+Video downloaded: 2025-11-15 - Title.mp4
+Audio downloaded: 2025-11-15 - Title.mp3
 Starting transcription...
 ================================================================================
-TRANSCRIPCION EN VIVO:
+LIVE TRANSCRIPTION:
 ================================================================================
-[Texto transcrito aparece aqui en tiempo real...]
+[Transcribed text appears here in real time...]
 ================================================================================
 File uploaded to Drive
 Processing complete.
 ```
 
-### Modo 2: Transcripcion Local
+### Mode 2: Local Transcription
 
 ```bash
-# Copiar archivos a input/
-cp mis_videos/*.mp4 input/
+# Copy files to input/
+cp my_videos/*.mp4 input/
 
-# Transcribir
-python LocalTranscriber.py --lang es
+# Transcribe
+python LocalTranscriber.py --lang en
 
-# Ver resultados
+# View results
 ls output/
 ```
 
-**Opciones**:
-- `--lang es`: Especificar idioma (es, en, fr, de, it, pt, etc.)
-- `--input ./videos`: Directorio de entrada custom
-- `--output ./textos`: Directorio de salida custom
+**Options**:
+- `--lang en`: Specify language (es, en, fr, de, it, pt, etc.)
+- `--input ./videos`: Custom input directory
+- `--output ./texts`: Custom output directory
 
-### Uso con GPU
+### GPU Usage
 
 ```bash
 export WHISPER_DEVICE=cuda
 python DiscordToDrive.py
 ```
 
-**Comparativa**:
-- CPU (8 cores): 45 min para video de 2h
-- GPU RTX 3060: 12-15 min (3x mas rapido)
-- GPU RTX 4090: 8-10 min (5x mas rapido)
+**Comparison**:
+- CPU (8 cores): 45 min for 2h video
+- GPU RTX 3060: 12-15 min (3x faster)
+- GPU RTX 4090: 8-10 min (5x faster)
 
-## Detalles de Componentes
+## Component Details
 
 ### DiscordToDrive.py
 
-Script principal para descarga, transcripcion y subida a Google Drive.
+Main script for download, transcription and upload to Google Drive.
 
-**Modelos Whisper disponibles**:
+**Available Whisper models**:
 
-| Modelo | Velocidad | Precision | VRAM | RAM |
-|--------|-----------|-----------|------|-----|
-| tiny | Muy rapida | Baja | 1GB | 1GB |
-| base | Rapida | Media | 1GB | 1GB |
-| small | Media | Media | 2GB | 2GB |
-| medium | Lenta | Alta | 5GB | 5GB |
-| large | Muy lenta | Muy alta | 10GB | 10GB |
+| Model | Speed | Accuracy | VRAM | RAM |
+|-------|-------|----------|------|-----|
+| tiny | Very fast | Low | 1GB | 1GB |
+| base | Fast | Medium | 1GB | 1GB |
+| small | Medium | Medium | 2GB | 2GB |
+| medium | Slow | High | 5GB | 5GB |
+| large | Very slow | Very high | 10GB | 10GB |
 
-Cambiar modelo en `DiscordToDrive.py` linea ~170:
+Change model in `DiscordToDrive.py` line ~170:
 ```python
 whisper_model = WhisperModel("medium", device=device)
 ```
 
 ### LocalTranscriber.py
 
-Herramienta CLI standalone para transcripcion local:
-- Extrae audio de videos con FFmpeg
-- Usa modelo `medium` por defecto
-- Soporta deteccion automatica de idioma
-- Procesa multiples archivos en lote
+Standalone CLI tool for local transcription:
+- Extracts audio from videos with FFmpeg
+- Uses `medium` model by default
+- Supports automatic language detection
+- Processes multiple files in batch
 
-## Resolucion de Problemas
+## Troubleshooting
 
-### FFmpeg no encontrado
+### FFmpeg not found
 
 ```bash
-# Verificar
+# Verify
 ffmpeg -version
 
-# Instalar
+# Install
 sudo apt install ffmpeg  # Linux
 brew install ffmpeg      # macOS
 ```
 
-### Error de autenticacion Google
+### Google authentication error
 
 ```bash
-# Regenerar token
+# Regenerate token
 rm token.pickle
-python DiscordToDrive.py  # Se abrira navegador
+python DiscordToDrive.py  # Browser will open
 ```
 
 ### CUDA out of memory
 
 ```python
-# Opcion 1: Modelo mas pequeno
+# Option 1: Smaller model
 whisper_model = WhisperModel("small", device=device)
 
-# Opcion 2: Forzar CPU
+# Option 2: Force CPU
 export WHISPER_DEVICE=cpu
 ```
 
-### Error SABR de yt-dlp
+### yt-dlp SABR error
 
 ```bash
-# Actualizar yt-dlp
+# Update yt-dlp
 pip install --upgrade yt-dlp
 ```
 
-### Transcripcion con repeticiones
+### Transcription with repetitions
 
-Ya implementado en codigo con parametros optimizados. Si persiste:
+Already implemented in code with optimized parameters. If persists:
 
 ```python
-# En transcribe_audio(), ajustar:
-temperature=0.0,  # Mas determinista
-no_speech_threshold=0.4  # Mas agresivo
+# In transcribe_audio(), adjust:
+temperature=0.0,  # More deterministic
+no_speech_threshold=0.4  # More aggressive
 ```
 
-## Tecnologias
+## Technologies
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Descarga de YouTube
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - Transcripcion IA
-- [Google Drive API](https://developers.google.com/drive) - Almacenamiento
-- [FFmpeg](https://ffmpeg.org/) - Procesamiento multimedia
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube download
+- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - AI transcription
+- [Google Drive API](https://developers.google.com/drive) - Storage
+- [FFmpeg](https://ffmpeg.org/) - Multimedia processing
 
-## Licencia
+## License
 
-Este proyecto es de codigo abierto. Consulta el archivo LICENSE para mas detalles.
+This project is open source. See the LICENSE file for more details.
