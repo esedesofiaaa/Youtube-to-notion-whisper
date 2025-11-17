@@ -1,7 +1,5 @@
 # YouTube to Google Drive Automation
 
-![YouTube to Google Drive Automation](https://github.com/user-attachments/assets/921fa3bc-3384-4f14-9710-ea04fe08a448)
-
 Sistema automatizado para descargar videos de YouTube, transcribirlos con **Faster-Whisper** y organizarlos en Google Drive.
 
 ## Tabla de Contenidos
