@@ -1,5 +1,5 @@
 """
-Tareas asíncronas de Celery para procesamiento de videos.
+Asynchronous Celery tasks for video processing.
 """
 import os
 from celery import Task
@@ -33,22 +33,22 @@ logger = get_logger(__name__)
 
 class CallbackTask(Task):
     """
-    Clase base para tareas con callbacks automáticos.
+    Base class for tasks with automatic callbacks.
     """
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        """Ejecutado cuando una tarea falla."""
-        logger.error(f"❌ Tarea {task_id} falló: {exc}")
+        """Executed when a task fails."""
+        logger.error(f"❌ Task {task_id} failed: {exc}")
         logger.error(f"   Args: {args}")
         logger.error(f"   Traceback: {einfo}")
 
     def on_success(self, retval, task_id, args, kwargs):
-        """Ejecutado cuando una tarea tiene éxito."""
-        logger.info(f"✅ Tarea {task_id} completada exitosamente")
+        """Executed when a task succeeds."""
+        logger.info(f"✅ Task {task_id} completed successfully")
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
-        """Ejecutado cuando una tarea se reintenta."""
-        logger.warning(f"🔄 Tarea {task_id} reintentando debido a: {exc}")
+        """Executed when a task is retried."""
+        logger.warning(f"🔄 Task {task_id} retrying due to: {exc}")
 
 
 @celery_app.task(
@@ -69,39 +69,39 @@ def process_youtube_video(
     parent_drive_folder_id: str = None
 ) -> dict:
     """
-    Tarea principal: procesa un video de YouTube y crea entrada en Notion.
+    Main task: process a YouTube video and create entry in Notion.
 
     Args:
-        discord_entry_id: ID de la entrada en Discord Message Database
-        youtube_url: URL del video de YouTube
-        channel: Canal de Discord (para determinar DB de destino)
-        parent_drive_folder_id: ID de la carpeta padre en Drive (opcional)
+        discord_entry_id: ID of the entry in Discord Message Database
+        youtube_url: YouTube video URL
+        channel: Discord channel (to determine destination DB)
+        parent_drive_folder_id: ID of parent folder in Drive (optional)
 
     Returns:
-        dict: Información de la tarea completada
+        dict: Information about the completed task
 
     Raises:
-        Exception: Si ocurre algún error durante el procesamiento
+        Exception: If any error occurs during processing
     """
     task_id = self.request.id
     logger.info("=" * 80)
-    logger.info(f"🚀 Iniciando procesamiento de video [Task ID: {task_id}]")
+    logger.info(f"🚀 Starting video processing [Task ID: {task_id}]")
     logger.info(f"   YouTube URL: {youtube_url}")
-    logger.info(f"   Canal: {channel}")
+    logger.info(f"   Channel: {channel}")
     logger.info(f"   Discord Entry ID: {discord_entry_id}")
     logger.info("=" * 80)
 
     try:
-        # 1. Validar y obtener configuración
+        # 1. Validate and get configuration
         destination_db = get_destination_database(channel)
         if not destination_db:
-            raise ValueError(f"No se encontró base de datos de destino para el canal: {channel}")
+            raise ValueError(f"No destination database found for channel: {channel}")
 
         database_id = destination_db["database_id"]
         database_name = destination_db["database_name"]
-        logger.info(f"📊 Base de datos de destino: {database_name}")
+        logger.info(f"📊 Destination database: {database_name}")
 
-        # 2. Inicializar componentes
+        # 2. Initialize components
         ensure_directory_exists(TEMP_DOWNLOAD_DIR)
         downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
@@ -109,40 +109,40 @@ def process_youtube_video(
         notion_client = NotionClient()
 
         if not drive_manager.service:
-            raise Exception("No se pudo autenticar con Google Drive API")
+            raise Exception("Could not authenticate with Google Drive API")
 
-        # 3. Obtener información del video
-        logger.info("📹 Obteniendo información del video...")
+        # 3. Get video information
+        logger.info("📹 Getting video information...")
         video_info = downloader.get_video_info(youtube_url)
         if not video_info:
-            raise Exception(f"No se pudo obtener información del video: {youtube_url}")
+            raise Exception(f"Could not get video information: {youtube_url}")
 
-        # 4. Obtener parent_folder_id de Discord Message Database si no se proporcionó
+        # 4. Get parent_folder_id from Discord Message Database if not provided
         if not parent_drive_folder_id:
-            logger.info("📄 Obteniendo información de Discord Message Database...")
+            logger.info("📄 Getting information from Discord Message Database...")
             discord_data = notion_client.get_discord_message_entry(discord_entry_id)
             if discord_data:
-                # Aquí podrías extraer parent_folder_id si estuviera en la DB
-                # Por ahora, usaremos un valor por defecto o lo pasaremos desde el webhook
-                logger.info("✅ Datos de Discord Message DB obtenidos")
+                # You could extract parent_folder_id here if it was in the DB
+                # For now, we'll use a default value or get it from the webhook
+                logger.info("✅ Discord Message DB data obtained")
 
-        # Si aún no tenemos parent_folder_id, usar uno por defecto (debería venir del webhook)
+        # If we still don't have parent_folder_id, use a default one
         if not parent_drive_folder_id:
-            logger.warning("⚠️ No se proporcionó parent_drive_folder_id, usando carpeta raíz")
-            parent_drive_folder_id = "root"  # Esto debería configurarse mejor
+            logger.warning("⚠️ No parent_drive_folder_id provided, using root folder")
+            parent_drive_folder_id = "root"  # This should be configured better
 
-        # 5. Crear carpeta en Drive
+        # 5. Create folder in Drive
         folder_name = f"{video_info.upload_date} - {video_info.safe_title}"
-        logger.info(f"📁 Creando carpeta en Drive: {folder_name}")
+        logger.info(f"📁 Creating folder in Drive: {folder_name}")
         drive_folder_id = drive_manager.create_folder(folder_name, parent_drive_folder_id)
         if not drive_folder_id:
-            raise Exception("No se pudo crear carpeta en Google Drive")
+            raise Exception("Could not create folder in Google Drive")
 
-        # Construir URL de la carpeta de Drive
+        # Build Drive folder URL
         drive_folder_url = f"https://drive.google.com/drive/folders/{drive_folder_id}"
 
-        # 6. Descargar video
-        logger.info("⬇️ Descargando video...")
+        # 6. Download video
+        logger.info("⬇️ Downloading video...")
         video_file = downloader.download_video(video_info)
         drive_video_url = None
 
@@ -151,27 +151,27 @@ def process_youtube_video(
                 uploaded, drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
                 if drive_file:
                     drive_video_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                    logger.info(f"✅ Video subido a Drive: {drive_video_url}")
+                    logger.info(f"✅ Video uploaded to Drive: {drive_video_url}")
             except Exception as e:
-                logger.error(f"❌ Error al subir video: {e}", exc_info=True)
+                logger.error(f"❌ Error uploading video: {e}", exc_info=True)
             finally:
                 safe_remove_file(video_file.path)
 
-        # 7. Descargar audio y transcribir
-        logger.info("🎵 Descargando audio...")
+        # 7. Download audio and transcribe
+        logger.info("🎵 Downloading audio...")
         audio_file = downloader.download_audio(video_info)
         transcription_text = ""
 
         if audio_file and audio_file.exists():
             try:
-                # Transcribir
+                # Transcribe
                 txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
                     date=video_info.upload_date,
                     title=video_info.safe_title
                 )
                 local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
 
-                logger.info("🎤 Iniciando transcripción...")
+                logger.info("🎤 Starting transcription...")
                 transcription_result = transcriber.transcribe(
                     audio_file,
                     language="en",
@@ -181,10 +181,10 @@ def process_youtube_video(
                 if transcription_result:
                     transcription_text = transcription_result.text
 
-                # Subir audio
+                # Upload audio
                 drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
 
-                # Subir transcripción
+                # Upload transcription
                 if transcription_result and transcription_result.output_path:
                     transcription_file = MediaFile(
                         path=transcription_result.output_path,
@@ -195,12 +195,12 @@ def process_youtube_video(
                     safe_remove_file(transcription_file.path)
 
             except Exception as e:
-                logger.error(f"❌ Error en transcripción: {e}", exc_info=True)
+                logger.error(f"❌ Error in transcription: {e}", exc_info=True)
             finally:
                 safe_remove_file(audio_file.path)
 
-        # 8. Crear página en Notion (base de datos de destino)
-        logger.info(f"📝 Creando página en Notion ({database_name})...")
+        # 8. Create page in Notion (destination database)
+        logger.info(f"📝 Creating page in Notion ({database_name})...")
         page_title = f"{video_info.upload_date} - {video_info.title}"
 
         notion_page = notion_client.create_video_page(
@@ -214,25 +214,25 @@ def process_youtube_video(
         )
 
         if not notion_page:
-            raise Exception("No se pudo crear página en Notion")
+            raise Exception("Could not create page in Notion")
 
         notion_page_url = notion_page.get("url")
-        logger.info(f"✅ Página de Notion creada: {notion_page_url}")
+        logger.info(f"✅ Notion page created: {notion_page_url}")
 
-        # 9. Actualizar campo Transcript en Discord Message Database
-        logger.info("🔄 Actualizando campo Transcript en Discord Message DB...")
+        # 9. Update Transcript field in Discord Message Database
+        logger.info("🔄 Updating Transcript field in Discord Message DB...")
         update_success = notion_client.update_transcript_field(
             discord_entry_id,
             notion_page_url
         )
 
         if not update_success:
-            logger.warning("⚠️ No se pudo actualizar el campo Transcript")
+            logger.warning("⚠️ Could not update Transcript field")
 
-        # 10. Limpiar archivos temporales
+        # 10. Clean up temporary files
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
 
-        # Resultado de la tarea
+        # Task result
         result = {
             "status": "success",
             "task_id": task_id,
@@ -246,19 +246,19 @@ def process_youtube_video(
         }
 
         logger.info("=" * 80)
-        logger.info("✅ Procesamiento completado exitosamente")
+        logger.info("✅ Processing completed successfully")
         logger.info(f"   Notion Page: {notion_page_url}")
         logger.info("=" * 80)
 
         return result
 
     except SoftTimeLimitExceeded:
-        logger.error(f"⏱️ Tarea {task_id} excedió el tiempo límite")
+        logger.error(f"⏱️ Task {task_id} exceeded time limit")
         raise
 
     except Exception as e:
-        logger.error(f"❌ Error en procesamiento de video: {e}", exc_info=True)
-        # Limpiar en caso de error
+        logger.error(f"❌ Error in video processing: {e}", exc_info=True)
+        # Clean up on error
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 
@@ -266,17 +266,17 @@ def process_youtube_video(
 @celery_app.task(bind=True, base=CallbackTask)
 def test_task(self, message: str = "Hello from Celery!"):
     """
-    Tarea de prueba para verificar que Celery funciona correctamente.
+    Test task to verify that Celery works correctly.
 
     Args:
-        message: Mensaje a loggear
+        message: Message to log
 
     Returns:
-        dict: Información de la tarea
+        dict: Task information
     """
     task_id = self.request.id
-    logger.info(f"🧪 Test task ejecutándose [Task ID: {task_id}]")
-    logger.info(f"   Mensaje: {message}")
+    logger.info(f"🧪 Test task running [Task ID: {task_id}]")
+    logger.info(f"   Message: {message}")
 
     return {
         "status": "success",

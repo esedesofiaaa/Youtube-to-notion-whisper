@@ -1,26 +1,26 @@
 """
-Configuración de Notion API y mapeo de bases de datos.
+Notion API configuration and database mapping.
 """
 import os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
+# Load environment variables
 load_dotenv()
 
 # ========== NOTION API ==========
 NOTION_TOKEN = os.getenv('NOTION_TOKEN', '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')
-NOTION_VERSION = "2022-06-28"  # Versión de la API de Notion
+NOTION_VERSION = "2022-06-28"  # Notion API version
 
-# ========== BASE DE DATOS IDS ==========
-# Base de datos de consulta (origen)
+# ========== DATABASE IDS ==========
+# Query database (source)
 DISCORD_MESSAGE_DB_ID = "28bdaf66daf7816383e6ce8390b0a866"
 
-# Bases de datos de destino
+# Destination databases
 PARADISE_ISLAND_DB_ID = "287daf66daf7807290d0fb514fdf4d86"
 DOCS_VIDEOS_DB_ID = "287daf66daf780fb89f7dd15bac7aa2a"
 
-# ========== MAPEO DE CANALES A BASES DE DATOS ==========
-# Cada canal de Discord se mapea a una base de datos de Notion específica
+# ========== CHANNEL TO DATABASE MAPPING ==========
+# Each Discord channel is mapped to a specific Notion database
 CHANNEL_TO_DATABASE_MAPPING = {
     "🎙・market-outlook": {
         "database_id": PARADISE_ISLAND_DB_ID,
@@ -32,11 +32,11 @@ CHANNEL_TO_DATABASE_MAPPING = {
     }
 }
 
-# Lista de canales válidos para procesamiento
+# List of valid channels for processing
 VALID_CHANNELS = list(CHANNEL_TO_DATABASE_MAPPING.keys())
 
-# ========== ESTRUCTURA DE CAMPOS DE NOTION ==========
-# Nombres de propiedades en Discord Message Database (origen)
+# ========== NOTION FIELD STRUCTURE ==========
+# Property names in Discord Message Database (source)
 DISCORD_DB_FIELDS = {
     "author": "Author",
     "message_id": "Message ID",
@@ -54,32 +54,32 @@ DISCORD_DB_FIELDS = {
     "sentiment": "Sentiment",
     "summary": "Summary",
     "token": "Token",
-    "transcript": "Transcript"  # Aquí guardaremos la URL de la página de Notion creada
+    "transcript": "Transcript"  # Here we will store the URL of the created Notion page
 }
 
-# Nombres de propiedades en bases de datos de destino
-# Estas propiedades son comunes a ambas DBs de destino
+# Property names in destination databases
+# These properties are common to both destination DBs
 DESTINATION_DB_FIELDS = {
     "name": "Name",                          # Title
     "date": "Date",                          # Date
     "video_link": "Video Link",              # URL
-    "drive_link": "Drive Link",              # URL (link al video en Drive)
-    "google_drive_folder": "Google drive Folder",  # URL (link a la carpeta)
+    "drive_link": "Drive Link",              # URL (link to video on Drive)
+    "google_drive_folder": "Google drive Folder",  # URL (link to folder)
     "discord_channel": "Discord Channel"     # Select
 }
 
-# Campos específicos de Docs Videos Database
+# Specific fields for Docs Videos Database
 DOCS_VIDEOS_SPECIFIC_FIELDS = {
-    # Drive Link y DiscordTradersRelation son relations, pero los omitiremos por ahora
+    # Drive Link and DiscordTradersRelation are relations, but we will omit them for now
 }
 
-# Campos específicos de Paradise Island Videos Database
+# Specific fields for Paradise Island Videos Database
 PARADISE_ISLAND_SPECIFIC_FIELDS = {
-    # Drive Link es relation, pero lo manejaremos como URL según instrucciones
+    # Drive Link is relation, but we will handle it as URL per instructions
 }
 
-# ========== VALIDACIONES ==========
-# Patrones de URL de YouTube válidos
+# ========== VALIDATIONS ==========
+# Valid YouTube URL patterns
 YOUTUBE_URL_PATTERNS = [
     "youtube.com/watch?v=",
     "youtu.be/",
@@ -89,13 +89,13 @@ YOUTUBE_URL_PATTERNS = [
 
 def is_valid_youtube_url(url: str) -> bool:
     """
-    Verifica si una URL es de YouTube válida.
+    Check if a URL is a valid YouTube URL.
 
     Args:
-        url: URL a validar
+        url: URL to validate
 
     Returns:
-        bool: True si es URL de YouTube válida
+        bool: True if it's a valid YouTube URL
     """
     if not url:
         return False
@@ -104,25 +104,25 @@ def is_valid_youtube_url(url: str) -> bool:
 
 def get_destination_database(channel: str) -> dict:
     """
-    Obtiene información de la base de datos de destino para un canal dado.
+    Get destination database information for a given channel.
 
     Args:
-        channel: Nombre del canal de Discord
+        channel: Discord channel name
 
     Returns:
-        dict: Diccionario con database_id y database_name, o None si no existe
+        dict: Dictionary with database_id and database_name, or None if not found
     """
     return CHANNEL_TO_DATABASE_MAPPING.get(channel)
 
 
 def is_valid_channel(channel: str) -> bool:
     """
-    Verifica si un canal está en la lista de canales válidos para procesamiento.
+    Check if a channel is in the list of valid channels for processing.
 
     Args:
-        channel: Nombre del canal de Discord
+        channel: Discord channel name
 
     Returns:
-        bool: True si el canal es válido
+        bool: True if the channel is valid
     """
     return channel in VALID_CHANNELS

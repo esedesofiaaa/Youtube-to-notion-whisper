@@ -8,15 +8,15 @@ from datetime import datetime
 
 @dataclass
 class VideoInfo:
-    """Información de un video de YouTube."""
+    """Information about a YouTube video."""
     url: str
     title: str
     upload_date: str
-    safe_title: str  # Título sanitizado para nombres de archivo
+    safe_title: str  # Sanitized title for file names
 
     @classmethod
     def from_url(cls, url: str, title: str, upload_date: str):
-        """Crea una instancia desde datos básicos."""
+        """Create an instance from basic data."""
         from utils.helpers import sanitize_filename
         safe_title = sanitize_filename(title)
         return cls(
@@ -29,32 +29,32 @@ class VideoInfo:
 
 @dataclass
 class MediaFile:
-    """Representa un archivo de medio (video/audio)."""
+    """Represents a media file (video/audio)."""
     path: str
     filename: str
     file_type: str  # 'video', 'audio', 'transcription', 'link'
 
     def exists(self) -> bool:
-        """Verifica si el archivo existe en el sistema."""
+        """Check if the file exists in the system."""
         import os
         return os.path.exists(self.path)
 
     def get_basename(self) -> str:
-        """Retorna el nombre base del archivo."""
+        """Return the base name of the file."""
         import os
         return os.path.basename(self.path)
 
 
 @dataclass
 class TranscriptionResult:
-    """Resultado de una transcripción de audio."""
+    """Result of an audio transcription."""
     text: str
     language: str
     language_probability: float
     output_path: Optional[str] = None
 
     def save(self, output_path: str) -> str:
-        """Guarda la transcripción en un archivo."""
+        """Save the transcription to a file."""
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(self.text.strip())
         self.output_path = output_path
@@ -63,7 +63,7 @@ class TranscriptionResult:
 
 @dataclass
 class DriveFile:
-    """Representa un archivo en Google Drive."""
+    """Represents a file in Google Drive."""
     id: str
     name: str
     mime_type: Optional[str] = None
@@ -71,7 +71,7 @@ class DriveFile:
 
     @classmethod
     def from_api_response(cls, response: dict):
-        """Crea una instancia desde respuesta de API."""
+        """Create an instance from API response."""
         return cls(
             id=response.get('id'),
             name=response.get('name'),
@@ -82,7 +82,7 @@ class DriveFile:
 
 @dataclass
 class ProcessingStatus:
-    """Estado del procesamiento de un video."""
+    """Status of video processing."""
     video_info: VideoInfo
     video_downloaded: bool = False
     audio_downloaded: bool = False
@@ -94,7 +94,7 @@ class ProcessingStatus:
     link_uploaded: bool = False
 
     def is_complete(self) -> bool:
-        """Verifica si el procesamiento está completo."""
+        """Check if processing is complete."""
         return all([
             self.video_downloaded,
             self.audio_downloaded,
@@ -107,7 +107,7 @@ class ProcessingStatus:
         ])
 
     def get_progress_percentage(self) -> float:
-        """Calcula el porcentaje de progreso."""
+        """Calculate the progress percentage."""
         total_steps = 8
         completed_steps = sum([
             self.video_downloaded,

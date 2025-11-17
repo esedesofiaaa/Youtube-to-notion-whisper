@@ -1,5 +1,5 @@
 """
-Cliente para interactuar con Notion API.
+Client to interact with Notion API.
 """
 from typing import Optional, Dict, Any
 from notion_client import Client
@@ -19,46 +19,46 @@ logger = get_logger(__name__)
 
 
 class NotionClient:
-    """Cliente para operaciones con Notion API."""
+    """Client for operations with Notion API."""
 
     def __init__(self, token: str = None):
         """
-        Inicializa el cliente de Notion.
+        Initialize the Notion client.
 
         Args:
-            token: Token de autenticación de Notion (opcional, usa variable de entorno por defecto)
+            token: Notion authentication token (optional, uses environment variable by default)
         """
         self.token = token or NOTION_TOKEN
         self.client = Client(auth=self.token)
-        logger.info("✅ Cliente de Notion inicializado correctamente")
+        logger.info("✅ Notion client initialized successfully")
 
     def get_page(self, page_id: str) -> Optional[Dict[str, Any]]:
         """
-        Obtiene una página de Notion por su ID.
+        Get a Notion page by its ID.
 
         Args:
-            page_id: ID de la página de Notion
+            page_id: Notion page ID
 
         Returns:
-            Dict con los datos de la página o None si falla
+            Dict with page data or None if fails
         """
         try:
             page = self.client.pages.retrieve(page_id=page_id)
-            logger.info(f"📄 Página obtenida: {page_id}")
+            logger.info(f"📄 Page retrieved: {page_id}")
             return page
         except Exception as e:
-            logger.error(f"❌ Error al obtener página {page_id}: {e}", exc_info=True)
+            logger.error(f"❌ Error retrieving page {page_id}: {e}", exc_info=True)
             return None
 
     def get_discord_message_entry(self, page_id: str) -> Optional[Dict[str, Any]]:
         """
-        Obtiene una entrada de Discord Message Database y extrae campos relevantes.
+        Get an entry from Discord Message Database and extract relevant fields.
 
         Args:
-            page_id: ID de la página en Discord Message Database
+            page_id: Page ID in Discord Message Database
 
         Returns:
-            Dict con campos extraídos o None si falla
+            Dict with extracted fields or None if fails
         """
         try:
             page = self.get_page(page_id)
@@ -67,7 +67,7 @@ class NotionClient:
 
             properties = page.get("properties", {})
 
-            # Extraer campos relevantes
+            # Extract relevant fields
             data = {
                 "page_id": page_id,
                 "page_url": page.get("url"),
@@ -79,11 +79,11 @@ class NotionClient:
                 "message_url": self._extract_url(properties.get(DISCORD_DB_FIELDS["message_url"]))
             }
 
-            logger.info(f"✅ Datos extraídos de Discord Message DB: Canal={data['channel']}, URL={data['attached_url']}")
+            logger.info(f"✅ Data extracted from Discord Message DB: Channel={data['channel']}, URL={data['attached_url']}")
             return data
 
         except Exception as e:
-            logger.error(f"❌ Error al obtener entrada de Discord Message DB {page_id}: {e}", exc_info=True)
+            logger.error(f"❌ Error retrieving Discord Message DB entry {page_id}: {e}", exc_info=True)
             return None
 
     def create_video_page(
@@ -97,22 +97,22 @@ class NotionClient:
         discord_channel: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Crea una página en una base de datos de destino (Paradise Island o Docs Videos).
+        Create a page in a destination database (Paradise Island or Docs Videos).
 
         Args:
-            database_id: ID de la base de datos de destino
-            title: Título de la página (formato: "YYYY-MM-DD - Título del video")
-            video_date: Fecha del video (YYYY-MM-DD)
-            video_url: URL del video de YouTube
-            drive_folder_url: URL de la carpeta en Google Drive
-            drive_video_url: URL del video MP4 en Google Drive
-            discord_channel: Nombre del canal de Discord
+            database_id: Destination database ID
+            title: Page title (format: "YYYY-MM-DD - Video Title")
+            video_date: Video date (YYYY-MM-DD)
+            video_url: YouTube video URL
+            drive_folder_url: URL of Google Drive folder
+            drive_video_url: URL of MP4 video on Google Drive
+            discord_channel: Discord channel name
 
         Returns:
-            Dict con la página creada o None si falla
+            Dict with created page or None if fails
         """
         try:
-            # Construir propiedades
+            # Build properties
             properties = {
                 DESTINATION_DB_FIELDS["name"]: {
                     "title": [{"text": {"content": title}}]
@@ -134,30 +134,30 @@ class NotionClient:
                 }
             }
 
-            # Crear página
+            # Create page
             page = self.client.pages.create(
                 parent={"database_id": database_id},
                 properties=properties
             )
 
             page_url = page.get("url")
-            logger.info(f"✅ Página creada en Notion: {page_url}")
+            logger.info(f"✅ Page created in Notion: {page_url}")
             return page
 
         except Exception as e:
-            logger.error(f"❌ Error al crear página en Notion: {e}", exc_info=True)
+            logger.error(f"❌ Error creating page in Notion: {e}", exc_info=True)
             return None
 
     def update_transcript_field(self, page_id: str, transcript_url: str) -> bool:
         """
-        Actualiza el campo Transcript en Discord Message Database con la URL de la página creada.
+        Update the Transcript field in Discord Message Database with the created page URL.
 
         Args:
-            page_id: ID de la página en Discord Message Database
-            transcript_url: URL de la página de transcripción en Notion
+            page_id: Page ID in Discord Message Database
+            transcript_url: URL of transcription page in Notion
 
         Returns:
-            bool: True si se actualizó correctamente
+            bool: True if updated successfully
         """
         try:
             self.client.pages.update(
@@ -168,44 +168,44 @@ class NotionClient:
                     }
                 }
             )
-            logger.info(f"✅ Campo Transcript actualizado en Discord Message DB: {page_id}")
+            logger.info(f"✅ Transcript field updated in Discord Message DB: {page_id}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error al actualizar campo Transcript: {e}", exc_info=True)
+            logger.error(f"❌ Error updating Transcript field: {e}", exc_info=True)
             return False
 
-    # ========== MÉTODOS AUXILIARES PARA EXTRAER DATOS ==========
+    # ========== HELPER METHODS TO EXTRACT DATA ==========
 
     def _extract_title(self, prop: Optional[Dict]) -> str:
-        """Extrae texto de una propiedad tipo title."""
+        """Extract text from a title type property."""
         if not prop or prop.get("type") != "title":
             return ""
         title_array = prop.get("title", [])
         return title_array[0].get("text", {}).get("content", "") if title_array else ""
 
     def _extract_rich_text(self, prop: Optional[Dict]) -> str:
-        """Extrae texto de una propiedad tipo rich_text."""
+        """Extract text from a rich_text type property."""
         if not prop or prop.get("type") != "rich_text":
             return ""
         text_array = prop.get("rich_text", [])
         return text_array[0].get("text", {}).get("content", "") if text_array else ""
 
     def _extract_select(self, prop: Optional[Dict]) -> str:
-        """Extrae valor de una propiedad tipo select."""
+        """Extract value from a select type property."""
         if not prop or prop.get("type") != "select":
             return ""
         select_obj = prop.get("select")
         return select_obj.get("name", "") if select_obj else ""
 
     def _extract_url(self, prop: Optional[Dict]) -> str:
-        """Extrae URL de una propiedad tipo url."""
+        """Extract URL from a url type property."""
         if not prop or prop.get("type") != "url":
             return ""
         return prop.get("url", "") or ""
 
     def _extract_date(self, prop: Optional[Dict]) -> str:
-        """Extrae fecha de una propiedad tipo date."""
+        """Extract date from a date type property."""
         if not prop or prop.get("type") != "date":
             return ""
         date_obj = prop.get("date")
@@ -213,28 +213,28 @@ class NotionClient:
 
     def validate_webhook_data(self, data: Dict[str, Any]) -> tuple[bool, str]:
         """
-        Valida que los datos del webhook sean correctos.
+        Validate that webhook data is correct.
 
         Args:
-            data: Datos recibidos del webhook
+            data: Webhook data received
 
         Returns:
-            tuple: (es_válido: bool, mensaje_error: str)
+            tuple: (is_valid: bool, error_message: str)
         """
-        # Validar campos requeridos
+        # Validate required fields
         required_fields = ["discord_entry_id", "youtube_url", "channel"]
         for field in required_fields:
             if field not in data or not data[field]:
-                return False, f"Campo requerido faltante: {field}"
+                return False, f"Required field missing: {field}"
 
-        # Validar canal
+        # Validate channel
         channel = data["channel"]
         if not is_valid_channel(channel):
-            return False, f"Canal inválido: {channel}. Canales válidos: {list(get_destination_database.keys())}"
+            return False, f"Invalid channel: {channel}. Valid channels: {list(get_destination_database.keys())}"
 
-        # Validar URL de YouTube
+        # Validate YouTube URL
         from config.notion_config import is_valid_youtube_url
         if not is_valid_youtube_url(data["youtube_url"]):
-            return False, f"URL de YouTube inválida: {data['youtube_url']}"
+            return False, f"Invalid YouTube URL: {data['youtube_url']}"
 
         return True, ""
