@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script para transcribir archivos de audio/video locales usando Faster-Whisper.
+Script to transcribe local audio/video files using Faster-Whisper.
 """
 import os
 import sys
@@ -8,7 +8,7 @@ import argparse
 import subprocess
 import shutil
 
-# Añadir el directorio raíz al path para imports
+# Add root directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.logger import setup_logger
@@ -28,13 +28,13 @@ logger = setup_logger(__name__)
 
 
 def extract_audio_from_video(video_path, output_dir):
-    """Extrae audio MP3 de un archivo de video usando FFmpeg."""
+    """Extract MP3 audio from a video file using FFmpeg."""
     filename = os.path.basename(video_path)
     base_name = os.path.splitext(filename)[0]
     output_path = os.path.join(output_dir, f"{base_name}.mp3")
 
     try:
-        logger.info(f"ℹ️ Extrayendo audio con FFmpeg desde: {filename}")
+        logger.info(f"ℹ️ Extracting audio with FFmpeg from: {filename}")
         ffmpeg_cmd = [
             'ffmpeg', '-i', video_path, '-q:a', FFMPEG_AUDIO_QUALITY,
             '-map', 'a', '-id3v2_version', FFMPEG_ID3_VERSION,
@@ -43,10 +43,10 @@ def extract_audio_from_video(video_path, output_dir):
         subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if os.path.exists(output_path):
-            logger.info(f"✅ Audio extraído: {os.path.basename(output_path)}")
+            logger.info(f"✅ Audio extracted: {os.path.basename(output_path)}")
             return output_path
     except Exception as e:
-        logger.error(f"❌ Error al extraer audio: {e}", exc_info=True)
+        logger.error(f"❌ Error extracting audio: {e}", exc_info=True)
     return None
 
 
@@ -58,14 +58,14 @@ def main():
     args = parser.parse_args()
 
     logger.info("=" * 80)
-    logger.info("🎙️ Iniciando Local Transcriber")
+    logger.info("🎙️ Starting Local Transcriber")
     logger.info("=" * 80)
 
     for directory in [args.input, args.output, TEMP_DIR]:
         ensure_directory_exists(directory)
 
     if not validate_ffmpeg():
-        logger.error("❌ FFmpeg no disponible")
+        logger.error("❌ FFmpeg not available")
         return
 
     transcriber = AudioTranscriber(WHISPER_MODEL_LOCAL)
@@ -73,15 +73,15 @@ def main():
                   if is_audio_file(os.path.join(args.input, f)) or is_video_file(os.path.join(args.input, f))]
 
     if not input_files:
-        logger.error(f"❌ No se encontraron archivos en '{args.input}'")
+        logger.error(f"❌ No files found in '{args.input}'")
         return
 
-    logger.info(f"✅ {len(input_files)} archivo(s) para procesar")
+    logger.info(f"✅ {len(input_files)} file(s) to process")
 
     for idx, filename in enumerate(input_files, 1):
         file_path = os.path.join(args.input, filename)
         logger.info("=" * 80)
-        logger.info(f"📄 Procesando {idx}/{len(input_files)}: {filename}")
+        logger.info(f"📄 Processing {idx}/{len(input_files)}: {filename}")
 
         audio_path = file_path
         if is_video_file(file_path):
@@ -102,7 +102,7 @@ def main():
 
     clean_temp_directory(TEMP_DIR)
     logger.info("=" * 80)
-    logger.info("✅ Procesamiento completo")
+    logger.info("✅ Processing complete")
     logger.info("=" * 80)
 
 

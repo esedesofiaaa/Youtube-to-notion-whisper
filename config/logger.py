@@ -1,5 +1,5 @@
 """
-Configuración centralizada de logging para el proyecto YouTube to Google Drive.
+Centralized logging configuration for the YouTube to Google Drive project.
 """
 import logging
 import os
@@ -9,37 +9,37 @@ from logging.handlers import RotatingFileHandler
 
 def setup_logger(name, log_level=logging.INFO):
     """
-    Configura y retorna un logger con handlers para archivo y consola.
+    Set up and return a logger with handlers for file and console.
 
     Args:
-        name (str): Nombre del logger (usualmente __name__)
-        log_level (int): Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        name (str): Logger name (usually __name__)
+        log_level (int): Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
     Returns:
-        logging.Logger: Logger configurado
+        logging.Logger: Configured logger
     """
-    # Crear directorio de logs si no existe
+    # Create logs directory if it doesn't exist
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
-    # Crear logger
+    # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
 
-    # Evitar duplicar handlers si ya existen
+    # Avoid duplicating handlers if they already exist
     if logger.handlers:
         return logger
 
-    # Formato detallado para archivo
+    # Detailed format for file
     file_formatter = logging.Formatter(
         '%(asctime)s | %(name)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Formato simple para consola (mantiene UX actual)
+    # Simple format for console (maintains current UX)
     console_formatter = logging.Formatter('%(message)s')
 
-    # Handler para archivo con rotación (max 10MB, 5 backups)
+    # File handler with rotation (max 10MB, 5 backups)
     log_file = os.path.join(log_dir, f"{name.replace('.', '_')}_{datetime.now():%Y%m%d}.log")
     file_handler = RotatingFileHandler(
         log_file,
@@ -50,12 +50,12 @@ def setup_logger(name, log_level=logging.INFO):
     file_handler.setLevel(log_level)
     file_handler.setFormatter(file_formatter)
 
-    # Handler para consola
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
     console_handler.setFormatter(console_formatter)
 
-    # Agregar handlers al logger
+    # Add handlers to logger
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
@@ -64,13 +64,13 @@ def setup_logger(name, log_level=logging.INFO):
 
 def get_logger(name):
     """
-    Obtiene un logger ya configurado o crea uno nuevo.
+    Get an already configured logger or create a new one.
 
     Args:
-        name (str): Nombre del logger
+        name (str): Logger name
 
     Returns:
-        logging.Logger: Logger configurado
+        logging.Logger: Configured logger
     """
     logger = logging.getLogger(name)
     if not logger.handlers:

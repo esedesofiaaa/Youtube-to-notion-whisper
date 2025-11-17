@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Script principal para descargar videos de YouTube, transcribirlos y subirlos a Google Drive.
+Main script to download YouTube videos, transcribe them, and upload to Google Drive.
 """
 import os
 import sys
 import json
 import datetime
 
-# Añadir el directorio raíz al path para imports
+# Add root directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.logger import setup_logger
@@ -30,16 +30,16 @@ logger = setup_logger(__name__)
 
 def create_link_file(video_url: str, output_dir: str, upload_date: str, safe_title: str) -> MediaFile:
     """
-    Crea un archivo de texto con la URL del video.
+    Create a text file with the video URL.
 
     Args:
-        video_url: URL del video de YouTube
-        output_dir: Directorio donde guardar el archivo
-        upload_date: Fecha de publicación
-        safe_title: Título sanitizado
+        video_url: YouTube video URL
+        output_dir: Directory to save the file
+        upload_date: Publication date
+        safe_title: Sanitized title
 
     Returns:
-        MediaFile object o None si falla
+        MediaFile object or None if fails
     """
     filename = LINK_FILE_FORMAT.format(date=upload_date, title=safe_title)
     output_path = os.path.join(output_dir, filename)
@@ -47,28 +47,28 @@ def create_link_file(video_url: str, output_dir: str, upload_date: str, safe_tit
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(f"YouTube URL: {video_url}\n")
-            f.write(f"Este archivo fue generado automáticamente el {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"🔗 Archivo de link creado: {os.path.basename(output_path)}")
+            f.write(f"This file was automatically generated on {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"🔗 Link file created: {os.path.basename(output_path)}")
         return MediaFile(
             path=output_path,
             filename=filename,
             file_type='link'
         )
     except Exception as e:
-        logger.error(f"❌ Error al crear archivo de link: {e}", exc_info=True)
+        logger.error(f"❌ Error creating link file: {e}", exc_info=True)
         return None
 
 
 def main():
-    """Función principal que coordina todo el proceso."""
+    """Main function that coordinates the entire process."""
     logger.info("=" * 80)
-    logger.info("🚀 Iniciando YouTube to Google Drive Automation")
+    logger.info("🚀 Starting YouTube to Google Drive Automation")
     logger.info("=" * 80)
 
-    # Validar dependencias
-    logger.info("🔍 Validando dependencias del sistema...")
+    # Validate dependencies
+    logger.info("🔍 Validating system dependencies...")
     if not validate_ffmpeg():
-        logger.error("❌ FFmpeg es requerido. Instálalo desde: https://ffmpeg.org/download.html")
+        logger.error("❌ FFmpeg is required. Install it from: https://ffmpeg.org/download.html")
         return
 
     if not validate_credentials(CREDENTIALS_FILE):
@@ -77,7 +77,7 @@ def main():
     if not validate_config_file(LINKS_CONFIG_FILE):
         return
 
-    # Cargar configuración
+    # Load configuration
     try:
         with open(LINKS_CONFIG_FILE, 'r') as f:
             config = json.load(f)
@@ -85,21 +85,21 @@ def main():
         video_urls = config.get("video_urls", [])
 
         if not parent_folder_id:
-            logger.error(f"❌ 'parent_folder_id' no encontrado en {LINKS_CONFIG_FILE}")
+            logger.error(f"❌ 'parent_folder_id' not found in {LINKS_CONFIG_FILE}")
             return
         if not video_urls:
-            logger.info(f"ℹ️ No se encontraron URLs en {LINKS_CONFIG_FILE}")
+            logger.info(f"ℹ️ No URLs found in {LINKS_CONFIG_FILE}")
             return
 
-        logger.info(f"✅ Configuración cargada: {len(video_urls)} video(s) a procesar")
+        logger.info(f"✅ Configuration loaded: {len(video_urls)} video(s) to process")
     except FileNotFoundError:
-        logger.error(f"❌ Archivo no encontrado: {LINKS_CONFIG_FILE}")
+        logger.error(f"❌ File not found: {LINKS_CONFIG_FILE}")
         return
     except json.JSONDecodeError:
-        logger.error(f"❌ {LINKS_CONFIG_FILE} no es un JSON válido")
+        logger.error(f"❌ {LINKS_CONFIG_FILE} is not valid JSON")
         return
 
-    # Inicializar componentes
+    # Initialize components
     downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
     transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
     drive_manager = DriveManager()
@@ -109,42 +109,42 @@ def main():
 
     ensure_directory_exists(TEMP_DOWNLOAD_DIR)
 
-    # Procesar cada video
+    # Process each video
     for idx, video_url in enumerate(video_urls, 1):
         logger.info("=" * 80)
-        logger.info(f"📹 Procesando video {idx}/{len(video_urls)}: {video_url}")
+        logger.info(f"📹 Processing video {idx}/{len(video_urls)}: {video_url}")
         logger.info("=" * 80)
 
-        # Obtener información del video
+        # Get video information
         video_info = downloader.get_video_info(video_url)
         if not video_info:
-            logger.warning(f"⚠️ Saltando video por falta de información: {video_url}")
+            logger.warning(f"⚠️ Skipping video due to missing information: {video_url}")
             continue
 
-        # Crear carpeta en Drive
+        # Create folder in Drive
         folder_name = FOLDER_NAME_FORMAT.format(
             date=video_info.upload_date,
             title=video_info.safe_title
         )
         drive_folder_id = drive_manager.create_folder(folder_name, parent_folder_id)
         if not drive_folder_id:
-            logger.warning(f"⚠️ Saltando video por error al crear carpeta en Drive")
+            logger.warning(f"⚠️ Skipping video due to error creating folder in Drive")
             continue
 
-        # Descargar video
+        # Download video
         video_file = downloader.download_video(video_info)
         if video_file and video_file.exists():
             try:
                 drive_manager.upload_if_not_exists(video_file, drive_folder_id)
             except Exception as e:
-                logger.error(f"❌ Error al subir video: {e}", exc_info=True)
+                logger.error(f"❌ Error uploading video: {e}", exc_info=True)
             finally:
                 safe_remove_file(video_file.path)
 
-        # Descargar audio
+        # Download audio
         audio_file = downloader.download_audio(video_info)
         if audio_file and audio_file.exists():
-            # Transcribir
+            # Transcribe
             txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
                 date=video_info.upload_date,
                 title=video_info.safe_title
@@ -153,19 +153,19 @@ def main():
 
             transcription_result = transcriber.transcribe(
                 audio_file,
-                language="en",  # Mantener en inglés
+                language="en",  # Keep in English
                 output_path=local_txt_path
             )
 
-            # Subir audio
+            # Upload audio
             try:
                 drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
             except Exception as e:
-                logger.error(f"❌ Error al subir audio: {e}", exc_info=True)
+                logger.error(f"❌ Error uploading audio: {e}", exc_info=True)
             finally:
                 safe_remove_file(audio_file.path)
 
-            # Subir transcripción
+            # Upload transcription
             if transcription_result and transcription_result.output_path:
                 transcription_file = MediaFile(
                     path=transcription_result.output_path,
@@ -175,11 +175,11 @@ def main():
                 try:
                     drive_manager.upload_if_not_exists(transcription_file, drive_folder_id)
                 except Exception as e:
-                    logger.error(f"❌ Error al subir transcripción: {e}", exc_info=True)
+                    logger.error(f"❌ Error uploading transcription: {e}", exc_info=True)
                 finally:
                     safe_remove_file(transcription_file.path)
 
-        # Crear y subir archivo de link
+        # Create and upload link file
         link_file = create_link_file(
             video_url,
             TEMP_DOWNLOAD_DIR,
@@ -190,17 +190,17 @@ def main():
             try:
                 drive_manager.upload_if_not_exists(link_file, drive_folder_id)
             except Exception as e:
-                logger.error(f"❌ Error al subir link: {e}", exc_info=True)
+                logger.error(f"❌ Error uploading link: {e}", exc_info=True)
             finally:
                 safe_remove_file(link_file.path)
 
-        logger.info(f"✅ Video procesado completamente: {folder_name}")
+        logger.info(f"✅ Video fully processed: {folder_name}")
 
-    # Limpiar
+    # Cleanup
     clean_temp_directory(TEMP_DOWNLOAD_DIR)
 
     logger.info("=" * 80)
-    logger.info("✅ Procesamiento completado exitosamente")
+    logger.info("✅ Processing completed successfully")
     logger.info("=" * 80)
 
 

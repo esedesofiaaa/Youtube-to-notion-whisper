@@ -58,7 +58,7 @@ class DriveManager:
             # Save the credentials for the next run
             with open(self.token_path, 'wb') as token:
                 pickle.dump(creds, token)
-                logger.info("Credentials saved to token.pickle")
+                logger.info("✅ Credentials saved to token.pickle")
 
         try:
             service = build('drive', 'v3', credentials=creds)

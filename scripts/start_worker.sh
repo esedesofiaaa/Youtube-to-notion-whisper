@@ -11,10 +11,13 @@ if [ -d ".venv" ]; then
     source .venv/bin/activate
 fi
 
+# Establecer PYTHONPATH
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+
 # Iniciar worker con procesamiento secuencial
 # --concurrency=1: Procesa solo un video a la vez (importante para CPU)
 # --prefetch-multiplier=1: No prefetch tareas adicionales
-celery -A src.celery_app worker \
+PYTHONPATH=$(pwd) celery -A src.celery_app worker \
     --loglevel=info \
     --concurrency=1 \
     --prefetch-multiplier=1 \

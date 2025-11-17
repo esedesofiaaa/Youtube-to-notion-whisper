@@ -1,26 +1,26 @@
 """
-Utilidades comunes para el proyecto YouTube to Google Drive.
+Common utilities for the YouTube to Google Drive project.
 """
 import os
 import subprocess
 import time
 from functools import wraps
-from logger_config import get_logger
+from config.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def retry_on_failure(max_retries=3, delay=2, exceptions=(Exception,)):
     """
-    Decorador para reintentar una función en caso de fallo.
+    Decorator to retry a function on failure.
 
     Args:
-        max_retries (int): Número máximo de reintentos
-        delay (int): Segundos de espera entre reintentos
-        exceptions (tuple): Tupla de excepciones a capturar
+        max_retries (int): Maximum number of retries
+        delay (int): Seconds to wait between retries
+        exceptions (tuple): Tuple of exceptions to catch
 
     Returns:
-        function: Función decorada con lógica de reintentos
+        function: Decorated function with retry logic
     """
     def decorator(func):
         @wraps(func)
@@ -44,7 +44,7 @@ def retry_on_failure(max_retries=3, delay=2, exceptions=(Exception,)):
                             f"Last error: {str(e)}"
                         )
 
-            # Si llegamos aquí, todos los reintentos fallaron
+            # If we reach here, all retries failed
             raise last_exception
 
         return wrapper
@@ -53,13 +53,13 @@ def retry_on_failure(max_retries=3, delay=2, exceptions=(Exception,)):
 
 def validate_ffmpeg():
     """
-    Valida que FFmpeg esté instalado y accesible en el sistema.
+    Validate that FFmpeg is installed and accessible in the system.
 
     Returns:
-        bool: True si FFmpeg está disponible, False en caso contrario
+        bool: True if FFmpeg is available, False otherwise
 
     Raises:
-        RuntimeError: Si FFmpeg no está disponible
+        RuntimeError: If FFmpeg is not available
     """
     try:
         result = subprocess.run(
@@ -71,105 +71,105 @@ def validate_ffmpeg():
 
         if result.returncode == 0:
             version_info = result.stdout.decode('utf-8').split('\n')[0]
-            logger.info(f"✅ FFmpeg detectado: {version_info}")
+            logger.info(f"✅ FFmpeg detected: {version_info}")
             return True
         else:
-            logger.error("⚠️ FFmpeg no parece estar disponible.")
+            logger.error("⚠️ FFmpeg does not appear to be available.")
             return False
 
     except FileNotFoundError:
-        logger.error("❌ FFmpeg no está instalado o no está en el PATH del sistema.")
-        logger.error("   Instala FFmpeg: https://ffmpeg.org/download.html")
+        logger.error("❌ FFmpeg is not installed or not in the system PATH.")
+        logger.error("   Install FFmpeg: https://ffmpeg.org/download.html")
         return False
     except subprocess.TimeoutExpired:
-        logger.error("❌ FFmpeg no respondió en tiempo esperado.")
+        logger.error("❌ FFmpeg did not respond in expected time.")
         return False
     except Exception as e:
-        logger.error(f"❌ Error al verificar FFmpeg: {e}")
+        logger.error(f"❌ Error verifying FFmpeg: {e}")
         return False
 
 
 def validate_credentials(credentials_file):
     """
-    Valida que el archivo de credenciales de Google Drive exista.
+    Validate that the Google Drive credentials file exists.
 
     Args:
-        credentials_file (str): Ruta al archivo de credenciales
+        credentials_file (str): Path to credentials file
 
     Returns:
-        bool: True si el archivo existe, False en caso contrario
+        bool: True if file exists, False otherwise
     """
     if not os.path.exists(credentials_file):
-        logger.error(f"❌ Archivo de credenciales no encontrado: {credentials_file}")
-        logger.error("   Descarga las credenciales desde Google Cloud Console")
+        logger.error(f"❌ Credentials file not found: {credentials_file}")
+        logger.error("   Download credentials from Google Cloud Console")
         logger.error("   https://console.cloud.google.com/")
         return False
 
-    logger.info(f"✅ Archivo de credenciales encontrado: {credentials_file}")
+    logger.info(f"✅ Credentials file found: {credentials_file}")
     return True
 
 
 def validate_config_file(config_file):
     """
-    Valida que el archivo de configuración exista.
+    Validate that the configuration file exists.
 
     Args:
-        config_file (str): Ruta al archivo de configuración
+        config_file (str): Path to configuration file
 
     Returns:
-        bool: True si el archivo existe, False en caso contrario
+        bool: True if file exists, False otherwise
     """
     if not os.path.exists(config_file):
-        logger.error(f"❌ Archivo de configuración no encontrado: {config_file}")
+        logger.error(f"❌ Configuration file not found: {config_file}")
         return False
 
-    logger.info(f"✅ Archivo de configuración encontrado: {config_file}")
+    logger.info(f"✅ Configuration file found: {config_file}")
     return True
 
 
 def sanitize_filename(filename):
     """
-    Sanitiza un nombre de archivo reemplazando caracteres inválidos.
+    Sanitize a filename by replacing invalid characters.
 
     Args:
-        filename (str): Nombre de archivo a sanitizar
+        filename (str): Filename to sanitize
 
     Returns:
-        str: Nombre de archivo sanitizado
+        str: Sanitized filename
     """
     return "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in filename)
 
 
 def ensure_directory_exists(directory):
     """
-    Asegura que un directorio exista, creándolo si es necesario.
+    Ensure a directory exists, creating it if necessary.
 
     Args:
-        directory (str): Ruta del directorio
+        directory (str): Directory path
 
     Returns:
-        bool: True si el directorio existe o fue creado exitosamente
+        bool: True if directory exists or was created successfully
     """
     try:
         if not os.path.exists(directory):
             os.makedirs(directory)
-            logger.info(f"📁 Directorio creado: {directory}")
+            logger.info(f"📁 Directory created: {directory}")
         return True
     except Exception as e:
-        logger.error(f"❌ Error al crear directorio {directory}: {e}")
+        logger.error(f"❌ Error creating directory {directory}: {e}")
         return False
 
 
 def is_audio_file(file_path, audio_extensions=None):
     """
-    Determina si un archivo es de audio basado en su extensión.
+    Determine if a file is an audio file based on its extension.
 
     Args:
-        file_path (str): Ruta al archivo
-        audio_extensions (tuple): Tupla de extensiones de audio válidas
+        file_path (str): File path
+        audio_extensions (tuple): Tuple of valid audio extensions
 
     Returns:
-        bool: True si es un archivo de audio, False en caso contrario
+        bool: True if it is an audio file, False otherwise
     """
     if audio_extensions is None:
         from config import AUDIO_EXTENSIONS
@@ -180,14 +180,14 @@ def is_audio_file(file_path, audio_extensions=None):
 
 def is_video_file(file_path, video_extensions=None):
     """
-    Determina si un archivo es de video basado en su extensión.
+    Determine if a file is a video file based on its extension.
 
     Args:
-        file_path (str): Ruta al archivo
-        video_extensions (tuple): Tupla de extensiones de video válidas
+        file_path (str): File path
+        video_extensions (tuple): Tuple of valid video extensions
 
     Returns:
-        bool: True si es un archivo de video, False en caso contrario
+        bool: True if it is a video file, False otherwise
     """
     if video_extensions is None:
         from config import VIDEO_EXTENSIONS
@@ -198,13 +198,13 @@ def is_video_file(file_path, video_extensions=None):
 
 def format_file_size(size_bytes):
     """
-    Formatea un tamaño en bytes a una representación legible.
+    Format a size in bytes to a human-readable representation.
 
     Args:
-        size_bytes (int): Tamaño en bytes
+        size_bytes (int): Size in bytes
 
     Returns:
-        str: Tamaño formateado (ej: "15.3 MB")
+        str: Formatted size (e.g. "15.3 MB")
     """
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size_bytes < 1024.0:
@@ -215,34 +215,34 @@ def format_file_size(size_bytes):
 
 def safe_remove_file(file_path):
     """
-    Elimina un archivo de forma segura, manejando errores.
+    Safely remove a file, handling errors.
 
     Args:
-        file_path (str): Ruta al archivo a eliminar
+        file_path (str): Path to file to remove
 
     Returns:
-        bool: True si se eliminó exitosamente, False en caso contrario
+        bool: True if removed successfully, False otherwise
     """
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
-            logger.info(f"🗑️ Eliminado: {os.path.basename(file_path)}")
+            logger.info(f"🗑️ Deleted: {os.path.basename(file_path)}")
             return True
         return False
     except OSError as e:
-        logger.warning(f"⚠️ Error al eliminar {file_path}: {e}")
+        logger.warning(f"⚠️ Error deleting {file_path}: {e}")
         return False
 
 
 def clean_temp_directory(directory):
     """
-    Limpia un directorio temporal si está vacío.
+    Clean a temporary directory if it is empty.
 
     Args:
-        directory (str): Ruta al directorio temporal
+        directory (str): Path to temporary directory
 
     Returns:
-        bool: True si se limpió exitosamente o no existía, False si quedaron archivos
+        bool: True if cleaned successfully or did not exist, False if files remain
     """
     try:
         if not os.path.exists(directory):
@@ -250,14 +250,14 @@ def clean_temp_directory(directory):
 
         if not os.listdir(directory):
             os.rmdir(directory)
-            logger.info(f"🗑️ Directorio temporal eliminado: {directory}")
+            logger.info(f"🗑️ Temporary directory deleted: {directory}")
             return True
         else:
             logger.warning(
-                f"⚠️ Directorio temporal '{directory}' no está vacío, "
-                f"puede requerir limpieza manual."
+                f"⚠️ Temporary directory '{directory}' is not empty, "
+                f"may require manual cleanup."
             )
             return False
     except OSError as e:
-        logger.warning(f"⚠️ Error al eliminar directorio temporal '{directory}': {e}")
+        logger.warning(f"⚠️ Error deleting temporary directory '{directory}': {e}")
         return False

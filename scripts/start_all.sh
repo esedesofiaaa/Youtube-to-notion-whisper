@@ -16,7 +16,7 @@ fi
 # Iniciar Redis con Docker Compose
 echo ""
 echo "📦 Iniciando Redis..."
-docker-compose up -d redis
+docker compose up -d redis
 
 # Esperar a que Redis esté listo
 echo "⏳ Esperando a que Redis esté listo..."
@@ -28,10 +28,14 @@ if [ -d ".venv" ]; then
     source .venv/bin/activate
 fi
 
+# Establecer PYTHONPATH para incluir el directorio del proyecto
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+echo "📁 PYTHONPATH configurado: $(pwd)"
+
 # Iniciar Celery Worker en segundo plano
 echo ""
 echo "🔧 Iniciando Celery Worker (modo secuencial: 1 video a la vez)..."
-celery -A src.celery_app worker \
+PYTHONPATH=$(pwd) celery -A src.celery_app worker \
     --loglevel=info \
     --concurrency=1 \
     --prefetch-multiplier=1 \
@@ -44,9 +48,10 @@ celery -A src.celery_app worker \
 # Iniciar Flower dashboard en segundo plano
 echo ""
 echo "🌸 Iniciando Flower Dashboard..."
-celery -A src.celery_app flower \
+PYTHONPATH=$(pwd) celery -A src.celery_app flower \
     --port=5555 \
     --address=0.0.0.0 \
+    --auth_provider=flower.views.auth.NoAuth \
     --logfile=logs/flower.log \
     --detach
 

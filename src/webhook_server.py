@@ -1,5 +1,5 @@
 """
-Servidor de webhooks con FastAPI para recibir notificaciones de n8n.
+Webhook server with FastAPI to receive notifications from n8n.
 """
 from fastapi import FastAPI, HTTPException, Header, status
 from fastapi.responses import JSONResponse
@@ -28,23 +28,23 @@ app = FastAPI(
 
 class WebhookPayload(BaseModel):
     """
-    Modelo de datos para el payload del webhook de n8n.
+    Data model for n8n webhook payload.
     """
-    discord_entry_id: str = Field(..., description="ID de la página en Discord Message Database")
-    youtube_url: str = Field(..., description="URL del video de YouTube")
-    channel: str = Field(..., description="Canal de Discord")
-    parent_drive_folder_id: Optional[str] = Field(None, description="ID de carpeta padre en Drive (opcional)")
+    discord_entry_id: str = Field(..., description="ID of the page in Discord Message Database")
+    youtube_url: str = Field(..., description="URL of the YouTube video")
+    channel: str = Field(..., description="Discord channel")
+    parent_drive_folder_id: Optional[str] = Field(None, description="ID of parent folder in Drive (optional)")
 
     @validator('youtube_url')
     def validate_youtube_url(cls, v):
         if not is_valid_youtube_url(v):
-            raise ValueError(f"URL de YouTube inválida: {v}")
+            raise ValueError(f"Invalid YouTube URL: {v}")
         return v
 
     @validator('channel')
     def validate_channel(cls, v):
         if not is_valid_channel(v):
-            raise ValueError(f"Canal inválido: {v}")
+            raise ValueError(f"Invalid channel: {v}")
         return v
 
     class Config:
@@ -59,7 +59,7 @@ class WebhookPayload(BaseModel):
 
 
 class TaskResponse(BaseModel):
-    """Modelo de respuesta para tareas encoladas."""
+    """Response model for queued tasks."""
     status: str
     message: str
     task_id: str
@@ -67,28 +67,28 @@ class TaskResponse(BaseModel):
     data: dict
 
 
-# ========== MIDDLEWARE DE AUTENTICACIÓN ==========
+# ========== AUTHENTICATION MIDDLEWARE ==========
 
 def verify_webhook_secret(x_webhook_secret: Optional[str] = Header(None)):
     """
-    Verifica el secreto del webhook para autenticación básica.
+    Verify webhook secret for basic authentication.
 
     Args:
-        x_webhook_secret: Header personalizado con el secreto
+        x_webhook_secret: Custom header with secret
 
     Raises:
-        HTTPException: Si el secreto es inválido o falta
+        HTTPException: If secret is invalid or missing
     """
     if WEBHOOK_SECRET and WEBHOOK_SECRET != "change-this-secret-in-production":
         if not x_webhook_secret:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Falta header de autenticación: X-Webhook-Secret"
+                detail="Missing authentication header: X-Webhook-Secret"
             )
         if x_webhook_secret != WEBHOOK_SECRET:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Secreto de webhook inválido"
+                detail="Invalid webhook secret"
             )
 
 
@@ -96,7 +96,7 @@ def verify_webhook_secret(x_webhook_secret: Optional[str] = Header(None)):
 
 @app.get("/")
 async def root():
-    """Endpoint raíz para verificar que el servidor está funcionando."""
+    """Root endpoint to verify server is running."""
     return {
         "service": "YouTube to Notion Webhook Server",
         "status": "running",
@@ -107,7 +107,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Endpoint de health check."""
+    """Health check endpoint."""
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat()
@@ -120,27 +120,27 @@ async def process_video_webhook(
     x_webhook_secret: Optional[str] = Header(None)
 ):
     """
-    Endpoint principal para recibir webhooks de n8n y encolar procesamiento de videos.
+    Main endpoint to receive n8n webhooks and queue video processing.
 
     Args:
-        payload: Datos del webhook
-        x_webhook_secret: Header de autenticación
+        payload: Webhook data
+        x_webhook_secret: Authentication header
 
     Returns:
-        TaskResponse: Información de la tarea encolada
+        TaskResponse: Information about the queued task
     """
-    # Verificar autenticación
+    # Verify authentication
     verify_webhook_secret(x_webhook_secret)
 
     try:
         logger.info("=" * 80)
-        logger.info("📨 Webhook recibido")
+        logger.info("📨 Webhook received")
         logger.info(f"   Discord Entry ID: {payload.discord_entry_id}")
         logger.info(f"   YouTube URL: {payload.youtube_url}")
-        logger.info(f"   Canal: {payload.channel}")
+        logger.info(f"   Channel: {payload.channel}")
         logger.info("=" * 80)
 
-        # Encolar tarea en Celery
+        # Queue task in Celery
         task = process_youtube_video.apply_async(
             kwargs={
                 "discord_entry_id": payload.discord_entry_id,
@@ -150,11 +150,11 @@ async def process_video_webhook(
             }
         )
 
-        logger.info(f"✅ Tarea encolada exitosamente [Task ID: {task.id}]")
+        logger.info(f"✅ Task queued successfully [Task ID: {task.id}]")
 
         return TaskResponse(
             status="queued",
-            message="Video encolado para procesamiento",
+            message="Video queued for processing",
             task_id=task.id,
             timestamp=datetime.utcnow().isoformat(),
             data={
@@ -165,23 +165,23 @@ async def process_video_webhook(
         )
 
     except Exception as e:
-        logger.error(f"❌ Error al procesar webhook: {e}", exc_info=True)
+        logger.error(f"❌ Error processing webhook: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al encolar tarea: {str(e)}"
+            detail=f"Error queuing task: {str(e)}"
         )
 
 
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str):
     """
-    Obtiene el estado de una tarea por su ID.
+    Get the status of a task by its ID.
 
     Args:
-        task_id: ID de la tarea de Celery
+        task_id: Celery task ID
 
     Returns:
-        dict: Estado y resultado de la tarea
+        dict: Task status and result
     """
     from celery.result import AsyncResult
     from src.celery_app import celery_app
@@ -195,17 +195,17 @@ async def get_task_status(task_id: str):
     }
 
     if task.state == "PENDING":
-        response["message"] = "Tarea pendiente o no existe"
+        response["message"] = "Task pending or does not exist"
     elif task.state == "STARTED":
-        response["message"] = "Tarea en progreso"
+        response["message"] = "Task in progress"
     elif task.state == "SUCCESS":
-        response["message"] = "Tarea completada exitosamente"
+        response["message"] = "Task completed successfully"
         response["result"] = task.result
     elif task.state == "FAILURE":
-        response["message"] = "Tarea falló"
+        response["message"] = "Task failed"
         response["error"] = str(task.info)
     elif task.state == "RETRY":
-        response["message"] = "Tarea reintentando"
+        response["message"] = "Task retrying"
         response["retry_info"] = str(task.info)
 
     return response
@@ -214,28 +214,28 @@ async def get_task_status(task_id: str):
 @app.post("/test/task")
 async def test_celery_task(message: str = "Test message"):
     """
-    Endpoint de prueba para verificar que Celery funciona.
+    Test endpoint to verify Celery works.
 
     Args:
-        message: Mensaje de prueba
+        message: Test message
 
     Returns:
-        dict: Información de la tarea de prueba
+        dict: Test task information
     """
     try:
         task = test_task.apply_async(kwargs={"message": message})
 
-        logger.info(f"🧪 Tarea de prueba encolada [Task ID: {task.id}]")
+        logger.info(f"🧪 Test task queued [Task ID: {task.id}]")
 
         return {
             "status": "queued",
-            "message": "Tarea de prueba encolada",
+            "message": "Test task queued",
             "task_id": task.id,
             "timestamp": datetime.utcnow().isoformat()
         }
 
     except Exception as e:
-        logger.error(f"❌ Error al encolar tarea de prueba: {e}", exc_info=True)
+        logger.error(f"❌ Error queuing test task: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error: {str(e)}"
@@ -244,8 +244,8 @@ async def test_celery_task(message: str = "Test message"):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Manejador global de excepciones."""
-    logger.error(f"❌ Excepción no manejada: {exc}", exc_info=True)
+    """Global exception handler."""
+    logger.error(f"❌ Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -256,12 +256,12 @@ async def global_exception_handler(request, exc):
     )
 
 
-# ========== FUNCIÓN PRINCIPAL ==========
+# ========== MAIN FUNCTION ==========
 
 def start_server():
-    """Inicia el servidor de webhooks."""
+    """Start the webhook server."""
     logger.info("=" * 80)
-    logger.info("🚀 Iniciando servidor de webhooks")
+    logger.info("🚀 Starting webhook server")
     logger.info(f"   Host: {WEBHOOK_HOST}")
     logger.info(f"   Port: {WEBHOOK_PORT}")
     logger.info("=" * 80)

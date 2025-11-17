@@ -23,7 +23,7 @@ pkill -f "uvicorn.*webhook_server" || echo "   Webhook Server no está corriendo
 # Detener Redis con Docker Compose
 echo ""
 echo "📦 Deteniendo Redis..."
-docker-compose down
+docker compose down
 
 echo ""
 echo "========================================="
