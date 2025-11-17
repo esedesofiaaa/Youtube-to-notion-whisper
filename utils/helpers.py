@@ -5,7 +5,7 @@ import os
 import subprocess
 import time
 from functools import wraps
-from logger_config import get_logger
+from config.logger import get_logger
 
 logger = get_logger(__name__)
 
