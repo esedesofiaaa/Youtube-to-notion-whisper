@@ -21,12 +21,13 @@ DOCS_VIDEOS_DB_ID = "287daf66daf780fb89f7dd15bac7aa2a"
 
 # ========== CHANNEL TO DATABASE MAPPING ==========
 # Each Discord channel is mapped to a specific Notion database
+# Note: Channel names without emojis for n8n compatibility
 CHANNEL_TO_DATABASE_MAPPING = {
-    "🎙・market-outlook": {
+    "market-outlook": {
         "database_id": PARADISE_ISLAND_DB_ID,
         "database_name": "Paradise Island Videos Database"
     },
-    "🎙・market-analysis-streams": {
+    "market-analysis-streams": {
         "database_id": DOCS_VIDEOS_DB_ID,
         "database_name": "Docs Videos Database"
     }

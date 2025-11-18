@@ -48,15 +48,14 @@ PYTHONPATH=$(pwd) celery -A src.celery_app worker \
 # Iniciar Flower dashboard en segundo plano
 echo ""
 echo "🌸 Iniciando Flower Dashboard..."
-PYTHONPATH=$(pwd) celery -A src.celery_app flower \
+PYTHONPATH=$(pwd) nohup celery -A src.celery_app flower \
     --port=5555 \
     --address=0.0.0.0 \
-    --auth_provider=flower.views.auth.NoAuth \
     --logfile=logs/flower.log \
-    --detach
+    > /dev/null 2>&1 &
 
-# Esperar un momento
-sleep 2
+# Esperar un momento para que Flower inicie
+sleep 3
 
 # Iniciar Webhook Server
 echo ""
@@ -80,8 +79,8 @@ echo "    (Worker y Flower seguirán corriendo en segundo plano)"
 echo ""
 echo "========================================="
 
-# Iniciar servidor de webhooks en primer plano
-python -m uvicorn src.webhook_server:app \
+# Iniciar servidor de webhooks en primer plano (con entorno virtual activado)
+PYTHONPATH=$(pwd) python -m uvicorn src.webhook_server:app \
     --host 0.0.0.0 \
     --port 8000
 

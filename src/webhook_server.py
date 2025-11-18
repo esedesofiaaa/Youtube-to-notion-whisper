@@ -52,7 +52,7 @@ class WebhookPayload(BaseModel):
             "example": {
                 "discord_entry_id": "28bdaf66daf7816383e6ce8390b0a866",
                 "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                "channel": "🎙・market-outlook",
+                "channel": "market-outlook",
                 "parent_drive_folder_id": "1ABC123xyz"
             }
         }
