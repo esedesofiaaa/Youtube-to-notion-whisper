@@ -1,0 +1,59 @@
+name: Deploy to Homeserver
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
+      - name: Deploy to homeserver
+        run: |
+          # Configurar SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # SSH al homeserver y ejecutar deploy
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key sofi@100.83.246.78 "bash -s" << 'EOF'
+            cd ~/whisper-automation/Youtube-to-notion-whisper
+            
+            # Git pull
+            git pull
+            
+            # Actualizar .env
+            cat > .env << 'ENVFILE'
+          ${{ secrets.ENV_FILE }}
+          ENVFILE
+            
+            # Actualizar credentials.json
+            cat > credentials.json << 'CREDSFILE'
+          ${{ secrets.CREDENTIALS_JSON_CONTENT }}
+          CREDSFILE
+            
+            # Instalar dependencias
+            source venv/bin/activate
+            pip install -r requirements.txt --quiet
+            
+            # Reiniciar servicio
+            sudo systemctl restart whisper-automation
+            
+            # Verificar salud
+            sleep 5
+            curl -f http://127.0.0.1:8000/health || exit 1
+          EOF
+
+      - name: Deploy summary
+        if: success()
+        run: echo "✅ Deploy completado exitosamente"
