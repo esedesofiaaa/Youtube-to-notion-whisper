@@ -27,7 +27,7 @@ jobs:
           
           # SSH al homeserver y ejecutar deploy
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key deploy@100.83.246.78 "bash -s" << 'EOF'
-            cd /home/sofi/whisper-automation/Youtube-to-notion-whisper
+            cd /home/deploy/whisper-automation/Youtube-to-notion-whisper
             
             # Git pull
             git pull
