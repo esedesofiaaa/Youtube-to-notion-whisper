@@ -32,28 +32,82 @@ jobs:
             # Git pull
             git pull
             
-            # Actualizar .env
+            # Crear .env con variables individuales
             cat > .env << 'ENVFILE'
-          ${{ secrets.ENV_FILE }}
-          ENVFILE
-            
-            # Actualizar credentials.json
-            cat > credentials.json << 'CREDSFILE'
-          ${{ secrets.CREDENTIALS_JSON_CONTENT }}
-          CREDSFILE
-            
-            # Instalar dependencias
-            source venv/bin/activate
-            pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org
-            
-            # Reiniciar servicio
-            sudo systemctl restart whisper-automation
-            
-            # Verificar salud
-            sleep 15
-            curl -f http://127.0.0.1:8000/health || exit 1
-          EOF
+              # WHISPER
+              WHISPER_DEVICE=cpu
+              WHISPER_MODEL_DEFAULT=small
+              WHISPER_MODEL_LOCAL=medium
 
-      - name: Deploy summary
-        if: success()
-        run: echo "✅ Deploy completado exitosamente"
+              # GOOGLE DRIVE
+              CREDENTIALS_FILE=credentials.json
+              TOKEN_PICKLE=token.pickle
+
+              # LOGGING
+              LOG_LEVEL=INFO
+
+              # DIRECTORIES
+              TEMP_DOWNLOAD_DIR=temp_downloads
+              INPUT_DIR=input
+              OUTPUT_DIR=output
+              TEMP_DIR=temp
+              LOG_DIR=logs
+
+              # FILES
+              LINKS_CONFIG_FILE=LinksYT.json
+
+              # YT-DLP
+              YT_DLP_RETRIES=10
+              YT_DLP_FRAGMENT_RETRIES=10
+              YT_DLP_SOCKET_TIMEOUT=20
+
+              # DRIVE UPLOAD
+              DRIVE_UPLOAD_MAX_RETRIES=3
+              DRIVE_UPLOAD_RETRY_DELAY=2
+
+              # NOTION (from secret)
+              NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}
+
+              # CELERY & REDIS
+              REDIS_URL=redis://localhost:6379/0
+              CELERY_BROKER_URL=redis://localhost:6379/0
+              CELERY_RESULT_BACKEND=redis://localhost:6379/0
+              CELERY_TASK_MAX_RETRIES=3
+              CELERY_TASK_RETRY_DELAY=60
+              CELERY_TASK_TIME_LIMIT=3600
+              CELERY_TASK_SOFT_TIME_LIMIT=3300
+              CELERY_WORKER_CONCURRENCY=1
+
+              # WEBHOOK SERVER (from secret)
+              WEBHOOK_HOST=0.0.0.0
+              WEBHOOK_PORT=8000
+              WEBHOOK_SECRET=${{ secrets.WEBHOOK_SECRET }}
+
+              # FLOWER (from secret)
+              FLOWER_PORT=5555
+              FLOWER_BASIC_AUTH=${{ secrets.FLOWER_BASIC_AUTH }}
+
+              # GOOGLE DRIVE FOLDER (optional, from secret if exists)
+              GOOGLE_DRIVE_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+              ENVFILE
+                          
+                          # Actualizar credentials.json
+                          cat > credentials.json << 'CREDSFILE'
+              ${{ secrets.CREDENTIALS_JSON_CONTENT }}
+              CREDSFILE
+                          
+                          # Instalar dependencias
+                          source venv/bin/activate
+                          pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org
+                          
+                          # Reiniciar servicio
+                          sudo systemctl restart whisper-automation
+                          
+                          # Verificar salud
+                          sleep 15
+                          curl -f http://127.0.0.1:8000/health || exit 1
+                        EOF
+
+                    - name: Deploy summary
+                      if: success()
+                      run: echo "✅ Deploy completado exitosamente"
