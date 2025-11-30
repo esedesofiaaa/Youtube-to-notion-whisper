@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ========== NOTION API ==========
-NOTION_TOKEN = os.getenv('NOTION_TOKEN', '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')
+NOTION_TOKEN = os.getenv('NOTION_TOKEN')
+if not NOTION_TOKEN:
+    raise ValueError("NOTION_TOKEN not found in environment variables. Please set it in .env file")
 NOTION_VERSION = "2022-06-28"  # Notion API version
 
 # ========== DATABASE IDS ==========
@@ -25,11 +27,13 @@ DOCS_VIDEOS_DB_ID = "287daf66daf780fb89f7dd15bac7aa2a"
 CHANNEL_TO_DATABASE_MAPPING = {
     "market-outlook": {
         "database_id": PARADISE_ISLAND_DB_ID,
-        "database_name": "Paradise Island Videos Database"
+        "database_name": "Paradise Island Videos Database",
+        "drive_folder_id": "1m2IkPllwhz3e2Tf4BBEoa4OSV37AafQ6"
     },
     "market-analysis-streams": {
         "database_id": DOCS_VIDEOS_DB_ID,
-        "database_name": "Docs Videos Database"
+        "database_name": "Docs Videos Database",
+        "drive_folder_id": "138kcwrnHsDhp6eW1npM0LZkSijjsWq--"
     }
 }
 

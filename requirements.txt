@@ -8,7 +8,8 @@ google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 
 # Audio Transcription
-faster-whisper>=1.0.0
+onnxruntime>=1.14,<2
+faster-whisper>=1.0.2
 av>=12.0.0
 
 # Notion API

@@ -99,7 +99,9 @@ def process_youtube_video(
 
         database_id = destination_db["database_id"]
         database_name = destination_db["database_name"]
+        drive_folder_id_from_config = destination_db.get("drive_folder_id")
         logger.info(f"📊 Destination database: {database_name}")
+        logger.info(f"📁 Drive folder ID: {drive_folder_id_from_config}")
 
         # 2. Initialize components
         ensure_directory_exists(TEMP_DOWNLOAD_DIR)
@@ -117,19 +119,14 @@ def process_youtube_video(
         if not video_info:
             raise Exception(f"Could not get video information: {youtube_url}")
 
-        # 4. Get parent_folder_id from Discord Message Database if not provided
+        # 4. Get parent_folder_id: use config value or webhook parameter
         if not parent_drive_folder_id:
-            logger.info("📄 Getting information from Discord Message Database...")
-            discord_data = notion_client.get_discord_message_entry(discord_entry_id)
-            if discord_data:
-                # You could extract parent_folder_id here if it was in the DB
-                # For now, we'll use a default value or get it from the webhook
-                logger.info("✅ Discord Message DB data obtained")
-
-        # If we still don't have parent_folder_id, use a default one
+            # Use the folder ID from channel configuration
+            parent_drive_folder_id = drive_folder_id_from_config
+            logger.info(f"📂 Using Drive folder from channel config: {parent_drive_folder_id}")
+        
         if not parent_drive_folder_id:
-            logger.warning("⚠️ No parent_drive_folder_id provided, using root folder")
-            parent_drive_folder_id = "root"  # This should be configured better
+            raise ValueError(f"No Drive folder ID configured for channel: {channel}")
 
         # 5. Create folder in Drive
         folder_name = f"{video_info.upload_date} - {video_info.safe_title}"
@@ -227,7 +224,7 @@ def process_youtube_video(
         )
 
         if not update_success:
-            logger.warning("⚠️ Could not update Transcript field")
+            logger.error("❌ ERROR: Could not update Transcript field")
 
         # 10. Clean up temporary files
         clean_temp_directory(TEMP_DOWNLOAD_DIR)

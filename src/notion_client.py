@@ -105,14 +105,14 @@ class NotionClient:
             video_date: Video date (YYYY-MM-DD)
             video_url: YouTube video URL
             drive_folder_url: URL of Google Drive folder
-            drive_video_url: URL of MP4 video on Google Drive
+            drive_video_url: URL of MP4 video on Google Drive (not used, kept for compatibility)
             discord_channel: Discord channel name
 
         Returns:
             Dict with created page or None if fails
         """
         try:
-            # Build properties
+            # Build properties (Drive Link is OMITTED to avoid relation type conflict)
             properties = {
                 DESTINATION_DB_FIELDS["name"]: {
                     "title": [{"text": {"content": title}}]
@@ -125,9 +125,6 @@ class NotionClient:
                 },
                 DESTINATION_DB_FIELDS["google_drive_folder"]: {
                     "url": drive_folder_url
-                },
-                DESTINATION_DB_FIELDS["drive_link"]: {
-                    "url": drive_video_url
                 },
                 DESTINATION_DB_FIELDS["discord_channel"]: {
                     "select": {"name": discord_channel}
@@ -145,7 +142,7 @@ class NotionClient:
             return page
 
         except Exception as e:
-            logger.error(f"❌ Error creating page in Notion: {e}", exc_info=True)
+            logger.error(f"❌ ERROR creating page in Notion: {e}", exc_info=True)
             return None
 
     def update_transcript_field(self, page_id: str, transcript_url: str) -> bool:
