@@ -15,11 +15,11 @@ NOTION_VERSION = "2022-06-28"  # Notion API version
 
 # ========== DATABASE IDS ==========
 # Query database (source)
-DISCORD_MESSAGE_DB_ID = "28bdaf66daf7816383e6ce8390b0a866"
+DISCORD_MESSAGE_DB_ID = os.getenv('DISCORD_MESSAGE_DB_ID')
 
 # Destination databases
-PARADISE_ISLAND_DB_ID = "287daf66daf7807290d0fb514fdf4d86"
-DOCS_VIDEOS_DB_ID = "287daf66daf780fb89f7dd15bac7aa2a"
+PARADISE_ISLAND_DB_ID = os.getenv('PARADISE_ISLAND_DB_ID')
+DOCS_VIDEOS_DB_ID = os.getenv('DOCS_VIDEOS_DB_ID')
 
 # ========== CHANNEL TO DATABASE MAPPING ==========
 # Each Discord channel is mapped to a specific Notion database
