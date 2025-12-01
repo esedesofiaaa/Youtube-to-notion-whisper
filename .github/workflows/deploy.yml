@@ -14,26 +14,32 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Connect to Tailscale
+        # Usa el SHA que ya arreglamos
         uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
       - name: Deploy to homeserver
+        # 1. AQUÍ DECLARAMOS LOS SECRETOS COMO VARIABLES DE ENTORNO
+        # Esto elimina los errores de SonarQube
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          FLOWER_BASIC_AUTH: ${{ secrets.FLOWER_BASIC_AUTH }}
+          CREDENTIALS_JSON_CONTENT: ${{ secrets.CREDENTIALS_JSON_CONTENT }}
+
         run: |
-          # Configurar SSH
+          # --- PASO 1: Configurar SSH (Usando variables de entorno) ---
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          
-          # SSH al homeserver y ejecutar deploy
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key deploy@100.83.246.78 "bash -s" << 'EOF'
-            cd /home/deploy/Youtube-to-notion-whisper
-            
-            # Git pull
-            git pull
-            
-            # Crear .env con variables individuales
-            cat > .env << 'ENVFILE'
+
+          # --- PASO 2: Crear archivos de configuración LOCALMENTE ---
+          # Al crearlos aquí usando variables de entorno ($VAR), SonarQube es feliz.
+          # Nota: Las 'vars' normales las dejamos igual  vars...  porque no son secretos.
+
+          cat > .env << ENVFILE
           # ========== WHISPER TRANSCRIPTION ==========
           WHISPER_DEVICE=${{ vars.WHISPER_DEVICE }}
           WHISPER_MODEL_DEFAULT=${{ vars.WHISPER_MODEL_DEFAULT }}
@@ -64,8 +70,8 @@ jobs:
           DRIVE_UPLOAD_MAX_RETRIES=${{ vars.DRIVE_UPLOAD_MAX_RETRIES }}
           DRIVE_UPLOAD_RETRY_DELAY=${{ vars.DRIVE_UPLOAD_RETRY_DELAY }}
 
-          # ========== NOTION API ==========
-          NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}
+          # ========== NOTION API (AQUÍ ESTÁ EL CAMBIO IMPORTANTE) ==========
+          NOTION_TOKEN=$NOTION_TOKEN
           DISCORD_MESSAGE_DB_ID=${{ vars.DISCORD_MESSAGE_DB_ID }}
           PARADISE_ISLAND_DB_ID=${{ vars.PARADISE_ISLAND_DB_ID }}
           DOCS_VIDEOS_DB_ID=${{ vars.DOCS_VIDEOS_DB_ID }}
@@ -85,20 +91,28 @@ jobs:
           CELERY_TASK_SOFT_TIME_LIMIT=${{ vars.CELERY_TASK_SOFT_TIME_LIMIT }}
           CELERY_WORKER_CONCURRENCY=${{ vars.CELERY_WORKER_CONCURRENCY }}
 
-          # ========== WEBHOOK SERVER ==========
+          # ========== WEBHOOK SERVER (OTRO CAMBIO) ==========
           WEBHOOK_HOST=${{ vars.WEBHOOK_HOST }}
           WEBHOOK_PORT=${{ vars.WEBHOOK_PORT }}
-          WEBHOOK_SECRET=${{ secrets.WEBHOOK_SECRET }}
+          WEBHOOK_SECRET=$WEBHOOK_SECRET
 
-          # ========== FLOWER DASHBOARD ==========
+          # ========== FLOWER DASHBOARD (OTRO CAMBIO) ==========
           FLOWER_PORT=${{ vars.FLOWER_PORT }}
-          FLOWER_BASIC_AUTH=${{ secrets.FLOWER_BASIC_AUTH }}
+          FLOWER_BASIC_AUTH=$FLOWER_BASIC_AUTH
           ENVFILE
+
+          # Crear credentials.json usando la variable de entorno
+          echo "$CREDENTIALS_JSON_CONTENT" > credentials.json
+
+          # --- PASO 3: Enviar los archivos al servidor ---
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key .env credentials.json deploy@100.83.246.78:/home/deploy/Youtube-to-notion-whisper/
+
+          # --- PASO 4: Conectarse y reiniciar servicios ---
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key deploy@100.83.246.78 "bash -s" << 'EOF'
+            cd /home/deploy/Youtube-to-notion-whisper
             
-            # Actualizar credentials.json
-            cat > credentials.json << 'CREDSFILE'
-          ${{ secrets.CREDENTIALS_JSON_CONTENT }}
-          CREDSFILE
+            # Git pull
+            git pull
             
             # Instalar dependencias
             source venv/bin/activate
