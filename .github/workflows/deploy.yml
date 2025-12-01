@@ -41,7 +41,6 @@ jobs:
 
           # ========== GOOGLE DRIVE API ==========
           CREDENTIALS_FILE=${{ vars.CREDENTIALS_FILE }}
-          TOKEN_PICKLE=${{ vars.TOKEN_PICKLE }}
 
           # ========== LOGGING ==========
           LOG_LEVEL=${{ vars.LOG_LEVEL }}
