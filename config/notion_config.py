@@ -70,7 +70,10 @@ DESTINATION_DB_FIELDS = {
     "video_link": "Video Link",              # URL
     "drive_link": "Drive Link",              # URL (link to video on Drive)
     "google_drive_folder": "Google drive Folder",  # URL (link to folder)
-    "discord_channel": "Discord Channel"     # Select
+    "discord_channel": "Discord Channel",    # Select
+    "audio_file_link": "Audio File Link",    # URL (link to audio on Drive)
+    "transcript_file": "Transcript File",    # Files & Media (TXT file from Drive)
+    "transcript_srt_file": "Transcript SRT File"  # Files & Media (SRT file from Drive)
 }
 
 # Specific fields for Docs Videos Database

@@ -158,9 +158,18 @@ def process_youtube_video(
         logger.info("🎵 Downloading audio...")
         audio_file = downloader.download_audio(video_info)
         transcription_text = ""
+        drive_audio_url = None
+        drive_transcript_txt_url = None
+        drive_transcript_srt_url = None
 
         if audio_file and audio_file.exists():
             try:
+                # Upload audio to Drive first
+                uploaded, drive_audio_file = drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
+                if drive_audio_file:
+                    drive_audio_url = f"https://drive.google.com/file/d/{drive_audio_file.id}/view"
+                    logger.info(f"✅ Audio uploaded to Drive: {drive_audio_url}")
+
                 # Transcribe
                 txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
                     date=video_info.upload_date,
@@ -178,18 +187,39 @@ def process_youtube_video(
                 if transcription_result:
                     transcription_text = transcription_result.text
 
-                # Upload audio
-                drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
+                    # Generate and save SRT file
+                    srt_filename = txt_filename.replace('.txt', '.srt')
+                    local_srt_path = os.path.join(TEMP_DOWNLOAD_DIR, srt_filename)
+                    
+                    logger.info("📄 Generating SRT file...")
+                    transcription_result.save_srt(local_srt_path)
+                    logger.info(f"✅ SRT file generated: {srt_filename}")
 
-                # Upload transcription
-                if transcription_result and transcription_result.output_path:
-                    transcription_file = MediaFile(
-                        path=transcription_result.output_path,
-                        filename=os.path.basename(transcription_result.output_path),
-                        file_type='transcription'
-                    )
-                    drive_manager.upload_if_not_exists(transcription_file, drive_folder_id)
-                    safe_remove_file(transcription_file.path)
+                    # Upload transcription TXT to Drive
+                    if transcription_result.output_path:
+                        transcription_txt_file = MediaFile(
+                            path=transcription_result.output_path,
+                            filename=os.path.basename(transcription_result.output_path),
+                            file_type='transcription'
+                        )
+                        uploaded_txt, drive_txt_file = drive_manager.upload_if_not_exists(transcription_txt_file, drive_folder_id)
+                        if drive_txt_file:
+                            drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_txt_file.id}/view"
+                            logger.info(f"✅ Transcript TXT uploaded to Drive: {drive_transcript_txt_url}")
+                        safe_remove_file(transcription_txt_file.path)
+
+                    # Upload transcription SRT to Drive
+                    if transcription_result.srt_path:
+                        transcription_srt_file = MediaFile(
+                            path=transcription_result.srt_path,
+                            filename=os.path.basename(transcription_result.srt_path),
+                            file_type='transcription'
+                        )
+                        uploaded_srt, drive_srt_file = drive_manager.upload_if_not_exists(transcription_srt_file, drive_folder_id)
+                        if drive_srt_file:
+                            drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_srt_file.id}/view"
+                            logger.info(f"✅ Transcript SRT uploaded to Drive: {drive_transcript_srt_url}")
+                        safe_remove_file(transcription_srt_file.path)
 
             except Exception as e:
                 logger.error(f"❌ Error in transcription: {e}", exc_info=True)
@@ -207,14 +237,23 @@ def process_youtube_video(
             video_url=youtube_url,
             drive_folder_url=drive_folder_url,
             drive_video_url=drive_video_url or "",
-            discord_channel=channel
+            discord_channel=channel,
+            audio_file_url=drive_audio_url,
+            transcript_file_url=drive_transcript_txt_url,
+            transcript_srt_file_url=drive_transcript_srt_url
         )
 
         if not notion_page:
             raise Exception("Could not create page in Notion")
 
         notion_page_url = notion_page.get("url")
+        notion_page_id = notion_page.get("id")
         logger.info(f"✅ Notion page created: {notion_page_url}")
+
+        # 8b. Add transcript as dropdown block in Notion page
+        if transcription_text:
+            logger.info("📝 Adding transcript as dropdown block to Notion page...")
+            notion_client.add_transcript_dropdown(notion_page_id, transcription_text)
 
         # 9. Update Transcript field in Discord Message Database
         logger.info("🔄 Updating Transcript field in Discord Message DB...")

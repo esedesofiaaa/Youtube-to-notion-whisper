@@ -94,7 +94,10 @@ class NotionClient:
         video_url: str,
         drive_folder_url: str,
         drive_video_url: str,
-        discord_channel: str
+        discord_channel: str,
+        audio_file_url: str = None,
+        transcript_file_url: str = None,
+        transcript_srt_file_url: str = None
     ) -> Optional[Dict[str, Any]]:
         """
         Create a page in a destination database (Paradise Island or Docs Videos).
@@ -107,6 +110,9 @@ class NotionClient:
             drive_folder_url: URL of Google Drive folder
             drive_video_url: URL of MP4 video on Google Drive (not used, kept for compatibility)
             discord_channel: Discord channel name
+            audio_file_url: URL of audio file on Google Drive (optional)
+            transcript_file_url: URL of transcript TXT file on Google Drive (optional)
+            transcript_srt_file_url: URL of transcript SRT file on Google Drive (optional)
 
         Returns:
             Dict with created page or None if fails
@@ -130,6 +136,24 @@ class NotionClient:
                     "select": {"name": discord_channel}
                 }
             }
+
+            # Add audio file link if provided
+            if audio_file_url:
+                properties[DESTINATION_DB_FIELDS["audio_file_link"]] = {
+                    "url": audio_file_url
+                }
+
+            # Add transcript file if provided (Files & Media type)
+            if transcript_file_url:
+                properties[DESTINATION_DB_FIELDS["transcript_file"]] = {
+                    "files": [{"name": "Transcript.txt", "external": {"url": transcript_file_url}}]
+                }
+
+            # Add transcript SRT file if provided (Files & Media type)
+            if transcript_srt_file_url:
+                properties[DESTINATION_DB_FIELDS["transcript_srt_file"]] = {
+                    "files": [{"name": "Transcript.srt", "external": {"url": transcript_srt_file_url}}]
+                }
 
             # Create page
             page = self.client.pages.create(
@@ -170,6 +194,71 @@ class NotionClient:
 
         except Exception as e:
             logger.error(f"❌ Error updating Transcript field: {e}", exc_info=True)
+            return False
+
+    def add_transcript_dropdown(self, page_id: str, transcript_text: str) -> bool:
+        """
+        Add a dropdown (toggle) block with the transcript text to a Notion page.
+
+        Args:
+            page_id: Page ID where to add the dropdown
+            transcript_text: Full transcript text to include in the dropdown
+
+        Returns:
+            bool: True if added successfully
+        """
+        try:
+            # Split transcript into chunks if too long (Notion has limits)
+            # Maximum 2000 characters per text block
+            max_chars = 2000
+            chunks = []
+            
+            if len(transcript_text) <= max_chars:
+                chunks = [transcript_text]
+            else:
+                # Split by paragraphs or sentences to avoid cutting words
+                words = transcript_text.split()
+                current_chunk = ""
+                for word in words:
+                    if len(current_chunk) + len(word) + 1 <= max_chars:
+                        current_chunk += word + " "
+                    else:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = word + " "
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+
+            # Create toggle (dropdown) block with transcript
+            children = []
+            for chunk in chunks:
+                children.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                    }
+                })
+
+            toggle_block = {
+                "object": "block",
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{"type": "text", "text": {"content": "📝 Transcript"}}],
+                    "children": children
+                }
+            }
+
+            # Append block to page
+            self.client.blocks.children.append(
+                block_id=page_id,
+                children=[toggle_block]
+            )
+
+            logger.info(f"✅ Transcript dropdown added to Notion page: {page_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error adding transcript dropdown: {e}", exc_info=True)
             return False
 
     # ========== HELPER METHODS TO EXTRACT DATA ==========

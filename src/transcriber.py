@@ -83,9 +83,16 @@ class AudioTranscriber:
 
             # Collect all segments showing in real-time
             transcription_text = ""
+            segments_list = []
             for segment in segments:
                 logger.info(segment.text)
                 transcription_text += segment.text
+                # Store segment with timestamps for SRT generation
+                segments_list.append({
+                    'start': segment.start,
+                    'end': segment.end,
+                    'text': segment.text
+                })
 
             logger.info("=" * 80)
 
@@ -93,7 +100,8 @@ class AudioTranscriber:
             result = TranscriptionResult(
                 text=transcription_text,
                 language=info.language,
-                language_probability=info.language_probability
+                language_probability=info.language_probability,
+                segments=segments_list
             )
 
             # Save if output path provided
