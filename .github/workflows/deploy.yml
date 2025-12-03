@@ -119,14 +119,13 @@ jobs:
             pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org
             
             # Reiniciar servicio
-            sudo systemctl restart youtube-whisper
+            sudo systemctl restart Youtube-to-notion-whisper
             
             # Verificar salud
             sleep 15
             curl -f http://127.0.0.1:8000/health || exit 1
           EOF
 
-          
       - name: Deploy summary
         if: success()
         run: echo "✅ Deploy completado exitosamente"
