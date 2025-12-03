@@ -126,6 +126,7 @@ jobs:
             curl -f http://127.0.0.1:8000/health || exit 1
           EOF
 
+          
       - name: Deploy summary
         if: success()
         run: echo "✅ Deploy completado exitosamente"
