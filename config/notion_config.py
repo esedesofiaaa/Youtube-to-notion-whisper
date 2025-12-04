@@ -24,16 +24,46 @@ DOCS_VIDEOS_DB_ID = os.getenv('DOCS_VIDEOS_DB_ID')
 # ========== CHANNEL TO DATABASE MAPPING ==========
 # Each Discord channel is mapped to a specific Notion database
 # Note: Channel names without emojis for n8n compatibility
+#
+# Configuration Schema:
+# - action_type: "create_new_page" (creates new page in destination DB) or
+#                "update_origin" (updates the source Discord Message DB entry)
+# - database_id: Notion database ID for destination (required for create_new_page)
+# - database_name: Human-readable name for logging
+# - drive_folder_id: Google Drive folder ID for uploads
+# - field_map: Maps logical keys to real Notion column names (required for update_origin)
+#   Logical keys: drive_folder (URL), video_file (Files), audio_file (Files),
+#                 transcript_file (Files), status (Select), transcript_url (URL)
+# - status_value: Value to set in status column (required if field_map has "status")
+#
 CHANNEL_TO_DATABASE_MAPPING = {
+    # Legacy behavior: create new page in destination database
     "market-outlook": {
+        "action_type": "create_new_page",
         "database_id": PARADISE_ISLAND_DB_ID,
         "database_name": "Paradise Island Videos Database",
         "drive_folder_id": "1m2IkPllwhz3e2Tf4BBEoa4OSV37AafQ6"
     },
     "market-analysis-streams": {
+        "action_type": "create_new_page",
         "database_id": DOCS_VIDEOS_DB_ID,
         "database_name": "Docs Videos Database",
         "drive_folder_id": "138kcwrnHsDhp6eW1npM0LZkSijjsWq--"
+    },
+    # New behavior: update the origin Discord Message DB entry directly
+    # Example configuration for audit-process channel
+    "audit-process": {
+        "action_type": "update_origin",
+        "database_name": "Discord Message Database (update mode)",
+        "drive_folder_id": "YOUR_AUDIT_DRIVE_FOLDER_ID",
+        "field_map": {
+            "drive_folder": "Carpeta Drive",      # URL type - link to Drive folder
+            "video_file": "Video File",           # Files type - video file from Drive
+            "audio_file": "Audio File",           # Files type - audio file from Drive
+            "transcript_file": "Transcript File", # Files type - transcript TXT from Drive
+            "status": "Status"                    # Select type - processing status
+        },
+        "status_value": "Auditado"
     }
 }
 

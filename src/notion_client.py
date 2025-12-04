@@ -196,6 +196,51 @@ class NotionClient:
             logger.error(f"❌ Error updating Transcript field: {e}", exc_info=True)
             return False
 
+    def update_page_properties(self, page_id: str, properties: dict) -> bool:
+        """
+        Update properties of a Notion page with pre-formatted properties dict.
+
+        This is a generic method that accepts already-formatted Notion properties.
+        Use the build_* helper methods to construct the properties dict.
+
+        Args:
+            page_id: Notion page ID to update
+            properties: Dict of properties formatted for Notion API
+
+        Returns:
+            bool: True if updated successfully
+        """
+        try:
+            self.client.pages.update(
+                page_id=page_id,
+                properties=properties
+            )
+            logger.info(f"✅ Page properties updated: {page_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error updating page properties: {e}", exc_info=True)
+            return False
+
+    # ========== PROPERTY BUILDER METHODS (Data-Driven) ==========
+
+    @staticmethod
+    def build_url_property(url: str) -> dict:
+        """Build a URL type property value."""
+        return {"url": url}
+
+    @staticmethod
+    def build_files_property(url: str, filename: str = "File") -> dict:
+        """Build a Files & Media type property value with external URL."""
+        return {
+            "files": [{"name": filename, "external": {"url": url}}]
+        }
+
+    @staticmethod
+    def build_select_property(value: str) -> dict:
+        """Build a Select type property value."""
+        return {"select": {"name": value}}
+
     def add_transcript_dropdown(self, page_id: str, transcript_text: str) -> bool:
         """
         Add a dropdown (toggle) block with the transcript text to a Notion page.

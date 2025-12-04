@@ -365,47 +365,122 @@ def process_youtube_video(
                     safe_remove_file(local_srt_path)
 
         # ============================================================
-        # 8. CREATE NOTION PAGE (atomic, after everything is ready)
+        # 8. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
         # ============================================================
-        logger.info(f"📝 Creating page in Notion ({database_name})...")
-        page_title = f"{video_info.upload_date} - {video_info.title}"
+        action_type = destination_db.get("action_type", "create_new_page")
+        logger.info(f"📝 Notion action: {action_type} ({database_name})...")
 
-        notion_page = notion_client.create_video_page(
-            database_id=database_id,
-            title=page_title,
-            video_date=video_info.upload_date,
-            video_url=youtube_url,
-            drive_folder_url=drive_folder_url,
-            drive_video_url=drive_video_url or "",
-            discord_channel=channel,
-            audio_file_url=drive_audio_url,
-            transcript_file_url=drive_transcript_txt_url,
-            transcript_srt_file_url=drive_transcript_srt_url
-        )
+        notion_page_url = None
+        notion_page_id = None
 
-        if not notion_page:
-            raise Exception("Could not create page in Notion")
+        if action_type == "create_new_page":
+            # ---- LEGACY BEHAVIOR: Create new page in destination database ----
+            page_title = f"{video_info.upload_date} - {video_info.title}"
 
-        notion_page_url = notion_page.get("url")
-        notion_page_id = notion_page.get("id")
-        logger.info(f"✅ Notion page created: {notion_page_url}")
+            notion_page = notion_client.create_video_page(
+                database_id=database_id,
+                title=page_title,
+                video_date=video_info.upload_date,
+                video_url=youtube_url,
+                drive_folder_url=drive_folder_url,
+                drive_video_url=drive_video_url or "",
+                discord_channel=channel,
+                audio_file_url=drive_audio_url,
+                transcript_file_url=drive_transcript_txt_url,
+                transcript_srt_file_url=drive_transcript_srt_url
+            )
 
-        # Add transcript as dropdown block in Notion page
-        if transcription_text:
-            logger.info("📝 Adding transcript dropdown to Notion page...")
-            notion_client.add_transcript_dropdown(notion_page_id, transcription_text)
+            if not notion_page:
+                raise Exception("Could not create page in Notion")
 
-        # ============================================================
-        # 9. UPDATE DISCORD MESSAGE DATABASE
-        # ============================================================
-        logger.info("🔄 Updating Transcript field in Discord Message DB...")
-        update_success = notion_client.update_transcript_field(
-            discord_entry_id,
-            notion_page_url
-        )
+            notion_page_url = notion_page.get("url")
+            notion_page_id = notion_page.get("id")
+            logger.info(f"✅ Notion page created: {notion_page_url}")
 
-        if not update_success:
-            logger.warning("⚠️ Could not update Transcript field in Discord Message DB")
+            # Add transcript as dropdown block in new Notion page
+            if transcription_text:
+                logger.info("📝 Adding transcript dropdown to Notion page...")
+                notion_client.add_transcript_dropdown(notion_page_id, transcription_text)
+
+            # Update Discord Message Database with link to new page
+            logger.info("🔄 Updating Transcript field in Discord Message DB...")
+            update_success = notion_client.update_transcript_field(
+                discord_entry_id,
+                notion_page_url
+            )
+            if not update_success:
+                logger.warning("⚠️ Could not update Transcript field in Discord Message DB")
+
+        elif action_type == "update_origin":
+            # ---- NEW BEHAVIOR: Update the origin Discord Message DB entry ----
+            field_map = destination_db.get("field_map", {})
+            status_value = destination_db.get("status_value")
+
+            # Build properties dynamically based on field_map
+            update_props = {}
+
+            # Map: drive_folder -> URL type
+            if "drive_folder" in field_map and drive_folder_url:
+                column_name = field_map["drive_folder"]
+                update_props[column_name] = notion_client.build_url_property(drive_folder_url)
+                logger.info(f"   📁 {column_name}: {drive_folder_url}")
+
+            # Map: video_file -> Files type
+            if "video_file" in field_map and drive_video_url:
+                column_name = field_map["video_file"]
+                update_props[column_name] = notion_client.build_files_property(
+                    drive_video_url,
+                    filename=f"{video_info.safe_title}.mp4"
+                )
+                logger.info(f"   🎬 {column_name}: {drive_video_url}")
+
+            # Map: audio_file -> Files type
+            if "audio_file" in field_map and drive_audio_url:
+                column_name = field_map["audio_file"]
+                update_props[column_name] = notion_client.build_files_property(
+                    drive_audio_url,
+                    filename=f"{video_info.safe_title}.mp3"
+                )
+                logger.info(f"   🎵 {column_name}: {drive_audio_url}")
+
+            # Map: transcript_file -> Files type
+            if "transcript_file" in field_map and drive_transcript_txt_url:
+                column_name = field_map["transcript_file"]
+                update_props[column_name] = notion_client.build_files_property(
+                    drive_transcript_txt_url,
+                    filename="Transcript.txt"
+                )
+                logger.info(f"   📝 {column_name}: {drive_transcript_txt_url}")
+
+            # Map: status -> Select type
+            if "status" in field_map and status_value:
+                column_name = field_map["status"]
+                update_props[column_name] = notion_client.build_select_property(status_value)
+                logger.info(f"   ✅ {column_name}: {status_value}")
+
+            # Update the origin page
+            if update_props:
+                update_success = notion_client.update_page_properties(
+                    discord_entry_id,
+                    update_props
+                )
+                if not update_success:
+                    raise Exception("Could not update origin page in Notion")
+                logger.info(f"✅ Origin page updated: {discord_entry_id}")
+            else:
+                logger.warning("⚠️ No properties to update (field_map may be empty)")
+
+            # Add transcript dropdown to origin page
+            if transcription_text:
+                logger.info("📝 Adding transcript dropdown to origin page...")
+                notion_client.add_transcript_dropdown(discord_entry_id, transcription_text)
+
+            # For update_origin, the "result" page URL is the original Discord entry
+            notion_page_url = f"https://www.notion.so/{discord_entry_id.replace('-', '')}"
+            notion_page_id = discord_entry_id
+
+        else:
+            raise ValueError(f"Unknown action_type: {action_type}")
 
         # ============================================================
         # 10. CLEANUP
