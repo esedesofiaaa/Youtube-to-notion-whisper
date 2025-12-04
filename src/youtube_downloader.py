@@ -94,7 +94,7 @@ class YouTubeDownloader:
 
     def get_video_info(self, video_url: str) -> Optional[VideoInfo]:
         """
-        Get video title and upload date using yt-dlp.
+        Get video information using yt-dlp.
 
         Args:
             video_url: YouTube video URL
@@ -107,22 +107,13 @@ class YouTubeDownloader:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
-                title = info.get("title", "Unknown Title")
-
-                # Parse upload date
-                upload_date_str = info.get("upload_date")
-                if upload_date_str:
-                    upload_date = datetime.datetime.strptime(upload_date_str, "%Y%m%d").strftime(DATE_FORMAT)
-                else:
-                    ts = info.get("release_timestamp") or info.get("timestamp")
-                    if ts:
-                        upload_date = datetime.datetime.utcfromtimestamp(int(ts)).strftime(DATE_FORMAT)
-                    else:
-                        upload_date = datetime.datetime.now().strftime(DATE_FORMAT)
-                        logger.warning(f"No upload date found for {video_url}, using current date")
-
-                logger.info(f"📹 Video info: '{title}' ({upload_date})")
-                return VideoInfo.from_url(video_url, title, upload_date)
+                video_info = VideoInfo.from_yt_info(video_url, info)
+                
+                logger.info(f"📹 Video info: '{video_info.title}' ({video_info.upload_date})")
+                logger.info(f"   ID: {video_info.video_id} | Channel: {video_info.channel}")
+                logger.info(f"   Duration: {video_info.duration/60:.1f} min | Availability: {video_info.availability}")
+                
+                return video_info
         except Exception as e:
             logger.error(f"❌ Error getting video info for {video_url}: {e}", exc_info=True)
             return None

@@ -10,7 +10,6 @@ from config.notion_config import (
     NOTION_VERSION,
     DISCORD_MESSAGE_DB_ID,
     DISCORD_DB_FIELDS,
-    DESTINATION_DB_FIELDS,
     get_destination_database,
     is_valid_channel
 )
@@ -89,71 +88,70 @@ class NotionClient:
     def create_video_page(
         self,
         database_id: str,
-        title: str,
-        video_date: str,
-        video_url: str,
-        drive_folder_url: str,
-        drive_video_url: str,
-        discord_channel: str,
-        audio_file_url: str = None,
-        transcript_file_url: str = None,
-        transcript_srt_file_url: str = None
+        field_map: dict,
+        data: dict
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a page in a destination database (Paradise Island or Docs Videos).
+        Create a page in a destination database using data-driven field mapping.
 
         Args:
             database_id: Destination database ID
-            title: Page title (format: "YYYY-MM-DD - Video Title")
-            video_date: Video date (YYYY-MM-DD)
-            video_url: YouTube video URL
-            drive_folder_url: URL of Google Drive folder
-            drive_video_url: URL of MP4 video on Google Drive (not used, kept for compatibility)
-            discord_channel: Discord channel name
-            audio_file_url: URL of audio file on Google Drive (optional)
-            transcript_file_url: URL of transcript TXT file on Google Drive (optional)
-            transcript_srt_file_url: URL of transcript SRT file on Google Drive (optional)
+            field_map: Dictionary mapping logical keys to Notion column names
+            data: Dictionary with data values keyed by logical names:
+                - name: Page title (required)
+                - date: Video date YYYY-MM-DD
+                - video_date_time: Video date with time
+                - video_link: YouTube URL
+                - live_video_url: Live stream URL (usually same as video_link)
+                - video_id: YouTube video ID
+                - youtube_channel: YouTube channel name
+                - drive_folder: Drive folder URL
+                - drive_folder_link: Drive folder URL (duplicate)
+                - video_file: Video file URL on Drive
+                - audio_file: Audio file URL on Drive
+                - transcript_file: Transcript TXT file URL
+                - transcript_srt_file: Transcript SRT file URL
+                - transcript_text: First 2000 chars of transcript
+                - discord_channel: Discord channel name
+                - status: Processing status
+                - length_min: Video duration in minutes
+                - process_errors: Error message if any
 
         Returns:
             Dict with created page or None if fails
         """
         try:
-            # Build properties (Drive Link is OMITTED to avoid relation type conflict)
-            properties = {
-                DESTINATION_DB_FIELDS["name"]: {
-                    "title": [{"text": {"content": title}}]
-                },
-                DESTINATION_DB_FIELDS["date"]: {
-                    "date": {"start": video_date}
-                },
-                DESTINATION_DB_FIELDS["video_link"]: {
-                    "url": video_url
-                },
-                DESTINATION_DB_FIELDS["google_drive_folder"]: {
-                    "url": drive_folder_url
-                },
-                DESTINATION_DB_FIELDS["discord_channel"]: {
-                    "select": {"name": discord_channel}
-                }
-            }
+            properties = {}
 
-            # Add audio file link if provided
-            if audio_file_url:
-                properties[DESTINATION_DB_FIELDS["audio_file_link"]] = {
-                    "url": audio_file_url
-                }
+            # Build properties dynamically based on field_map
+            for logical_key, column_name in field_map.items():
+                value = data.get(logical_key)
+                if value is None:
+                    continue
 
-            # Add transcript file if provided (Files & Media type)
-            if transcript_file_url:
-                properties[DESTINATION_DB_FIELDS["transcript_file"]] = {
-                    "files": [{"name": "Transcript.txt", "external": {"url": transcript_file_url}}]
-                }
-
-            # Add transcript SRT file if provided (Files & Media type)
-            if transcript_srt_file_url:
-                properties[DESTINATION_DB_FIELDS["transcript_srt_file"]] = {
-                    "files": [{"name": "Transcript.srt", "external": {"url": transcript_srt_file_url}}]
-                }
+                # Map by property type based on logical key
+                if logical_key == "name":
+                    properties[column_name] = self.build_title_property(value)
+                
+                elif logical_key in ("date", "video_date_time"):
+                    properties[column_name] = self.build_date_property(value)
+                
+                elif logical_key in ("video_link", "video_url", "live_video_url", "drive_folder", 
+                                     "drive_folder_link", "video_file", "audio_file"):
+                    properties[column_name] = self.build_url_property(value)
+                
+                elif logical_key in ("transcript_file", "transcript_srt_file"):
+                    filename = "Transcript.txt" if "srt" not in logical_key else "Transcript.srt"
+                    properties[column_name] = self.build_files_property(value, filename)
+                
+                elif logical_key in ("discord_channel", "youtube_channel", "status", "youtube_listing_status"):
+                    properties[column_name] = self.build_select_property(value)
+                
+                elif logical_key == "length_min":
+                    properties[column_name] = self.build_number_property(value)
+                
+                elif logical_key in ("video_id", "transcript_text", "process_errors"):
+                    properties[column_name] = self.build_text_property(value)
 
             # Create page
             page = self.client.pages.create(
@@ -240,6 +238,28 @@ class NotionClient:
     def build_select_property(value: str) -> dict:
         """Build a Select type property value."""
         return {"select": {"name": value}}
+
+    @staticmethod
+    def build_title_property(text: str) -> dict:
+        """Build a Title type property value."""
+        return {"title": [{"text": {"content": text}}]}
+
+    @staticmethod
+    def build_text_property(text: str) -> dict:
+        """Build a Rich Text type property value."""
+        # Notion has a 2000 char limit per text block
+        truncated = text[:2000] if len(text) > 2000 else text
+        return {"rich_text": [{"text": {"content": truncated}}]}
+
+    @staticmethod
+    def build_date_property(date_str: str) -> dict:
+        """Build a Date type property value."""
+        return {"date": {"start": date_str}}
+
+    @staticmethod
+    def build_number_property(value: float) -> dict:
+        """Build a Number type property value."""
+        return {"number": value}
 
     def add_transcript_dropdown(self, page_id: str, transcript_text: str) -> bool:
         """

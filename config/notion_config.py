@@ -18,8 +18,7 @@ NOTION_VERSION = "2022-06-28"  # Notion API version
 DISCORD_MESSAGE_DB_ID = os.getenv('DISCORD_MESSAGE_DB_ID')
 
 # Destination databases
-PARADISE_ISLAND_DB_ID = os.getenv('PARADISE_ISLAND_DB_ID')
-DOCS_VIDEOS_DB_ID = os.getenv('DOCS_VIDEOS_DB_ID')
+VIDEOS_DB_ID = os.getenv('VIDEOS_DB_ID')  # Unified videos database
 
 # ========== CHANNEL TO DATABASE MAPPING ==========
 # Each Discord channel is mapped to a specific Notion database
@@ -31,39 +30,121 @@ DOCS_VIDEOS_DB_ID = os.getenv('DOCS_VIDEOS_DB_ID')
 # - database_id: Notion database ID for destination (required for create_new_page)
 # - database_name: Human-readable name for logging
 # - drive_folder_id: Google Drive folder ID for uploads
-# - field_map: Maps logical keys to real Notion column names (required for update_origin)
-#   Logical keys: drive_folder (URL), video_file (Files), audio_file (Files),
-#                 transcript_file (Files), status (Select), transcript_url (URL)
-# - status_value: Value to set in status column (required if field_map has "status")
+# - field_map: Maps logical keys to real Notion column names
+#   Logical keys available:
+#     - name (title), name_yt_format (title - "YouTube Video: {title}")
+#     - date (date), video_date_time (date)
+#     - video_link (url), video_url (url), live_video_url (url), video_id (text)
+#     - drive_folder (url), drive_folder_link (url)
+#     - video_file (url), audio_file (url)
+#     - transcript_file (file), transcript_srt_file (file), transcript_text (text)
+#     - discord_channel (select), youtube_channel (select), youtube_listing_status (select)
+#     - status (select), length_min (number), process_errors (text)
+# - status_value: Value to set in status column when complete
+# - name_format: Optional format for page title ("default" or "youtube")
 #
+
+# ========== BASE CONFIGURATION FOR VIDEOS DATABASE ==========
+# Shared configuration for all channels that use the Videos Database
+_VIDEOS_DB_BASE_CONFIG = {
+    "action_type": "create_new_page",
+    "database_id": VIDEOS_DB_ID,
+    "database_name": "Videos Database",
+    "field_map": {
+        # Title and dates
+        "name": "Name",                           # title
+        "date": "Date",                           # date
+        "video_date_time": "Video Date and time", # date
+        
+        # YouTube info
+        "video_link": "Video Link",               # url - YouTube URL
+        "live_video_url": "Live Video URL",       # url - same as video_link
+        "video_id": "Video ID",                   # text - YouTube video ID
+        "youtube_channel": "YouTube Channel",     # select
+        
+        # Drive folder
+        "drive_folder": "Google drive Folder",    # url
+        "drive_folder_link": "GoogleDriveFolderLink",  # url - duplicate
+        
+        # Media files (URLs)
+        "video_file": "Video FIle Link",          # url - video on Drive
+        "audio_file": "Audio File Link",          # url - audio on Drive
+        
+        # Transcription
+        "transcript_file": "Transcript File",     # file
+        "transcript_srt_file": "Transcript SRT File",  # file
+        "transcript_text": "Transcript",          # text - first 2000 chars
+        
+        # Metadata
+        "discord_channel": "Discord Channel",     # select
+        "status": "Transcript Process Status",    # select
+        "youtube_listing_status": "YoutubeListingStatus",  # select - Public/Unlisted
+        "length_min": "Lenght min",               # number (typo in Notion)
+        "process_errors": "ProcessErrors"         # text
+    },
+    "status_value": "complete"
+}
+
+# ========== DRIVE FOLDER IDS (from .env) ==========
+DRIVE_FOLDER_MARKET_OUTLOOK = os.getenv('DRIVE_FOLDER_MARKET_OUTLOOK')
+DRIVE_FOLDER_MARKET_ANALYSIS = os.getenv('DRIVE_FOLDER_MARKET_ANALYSIS')
+DRIVE_FOLDER_AUDIT_PROCESS = os.getenv('DRIVE_FOLDER_AUDIT_PROCESS')
+
+# ========== CHANNEL MAPPINGS ==========
 CHANNEL_TO_DATABASE_MAPPING = {
-    # Legacy behavior: create new page in destination database
+    # Both channels use the same Videos Database with same configuration
     "market-outlook": {
-        "action_type": "create_new_page",
-        "database_id": PARADISE_ISLAND_DB_ID,
-        "database_name": "Paradise Island Videos Database",
-        "drive_folder_id": "1m2IkPllwhz3e2Tf4BBEoa4OSV37AafQ6"
+        **_VIDEOS_DB_BASE_CONFIG,
+        "drive_folder_id": DRIVE_FOLDER_MARKET_OUTLOOK
     },
     "market-analysis-streams": {
-        "action_type": "create_new_page",
-        "database_id": DOCS_VIDEOS_DB_ID,
-        "database_name": "Docs Videos Database",
-        "drive_folder_id": "138kcwrnHsDhp6eW1npM0LZkSijjsWq--"
+        **_VIDEOS_DB_BASE_CONFIG,
+        "drive_folder_id": DRIVE_FOLDER_MARKET_ANALYSIS
     },
-    # New behavior: update the origin Discord Message DB entry directly
-    # Example configuration for audit-process channel
+    
+    # Example: Add more channels pointing to same DB with different Drive folders
+    # "another-channel": {
+    #     **_VIDEOS_DB_BASE_CONFIG,
+    #     "drive_folder_id": os.getenv('DRIVE_FOLDER_ANOTHER_CHANNEL')
+    # },
+    
+    # Audit process: updates the origin Discord Message DB entry directly
     "audit-process": {
         "action_type": "update_origin",
-        "database_name": "Discord Message Database (update mode)",
-        "drive_folder_id": "YOUR_AUDIT_DRIVE_FOLDER_ID",
+        "database_name": "Discord Message Database (audit mode)",
+        "drive_folder_id": DRIVE_FOLDER_AUDIT_PROCESS,
+        "name_format": "youtube",  # "YouTube Video: {title}"
         "field_map": {
-            "drive_folder": "Carpeta Drive",      # URL type - link to Drive folder
-            "video_file": "Video File",           # Files type - video file from Drive
-            "audio_file": "Audio File",           # Files type - audio file from Drive
-            "transcript_file": "Transcript File", # Files type - transcript TXT from Drive
-            "status": "Status"                    # Select type - processing status
+            # Title (YouTube format)
+            "name": "Name",                           # title - "YouTube Video: {title}"
+            
+            # Date
+            "video_date_time": "Video Date and time", # date
+            
+            # YouTube info
+            "video_url": "URL",                       # url - YouTube URL
+            "live_video_url": "Live Video URL",       # url - same as video_url
+            "video_id": "Video ID",                   # text - YouTube video ID
+            "youtube_channel": "YouTube Channel",     # select
+            
+            # Drive folder
+            "drive_folder_link": "GoogleDriveFolderLink",  # url
+            
+            # Media files (URLs)
+            "video_file": "Video FIle Link",          # url - video on Drive
+            "audio_file": "Audio File Link",          # url - audio on Drive
+            
+            # Transcription
+            "transcript_file": "Transcript File",     # file
+            "transcript_srt_file": "Transcript SRT File",  # file
+            "transcript_text": "Transcript",          # text - first 2000 chars
+            
+            # Metadata
+            "status": "Transcript Process Status",    # select
+            "youtube_listing_status": "YoutubeListingStatus",  # select - Public/Unlisted
+            "length_min": "Lenght min"                # number (typo in Notion)
         },
-        "status_value": "Auditado"
+        "status_value": "complete"
     }
 }
 
@@ -72,6 +153,7 @@ VALID_CHANNELS = list(CHANNEL_TO_DATABASE_MAPPING.keys())
 
 # ========== NOTION FIELD STRUCTURE ==========
 # Property names in Discord Message Database (source)
+# Used when reading data from Discord Message DB
 DISCORD_DB_FIELDS = {
     "author": "Author",
     "message_id": "Message ID",
@@ -89,31 +171,7 @@ DISCORD_DB_FIELDS = {
     "sentiment": "Sentiment",
     "summary": "Summary",
     "token": "Token",
-    "transcript": "Transcript"  # Here we will store the URL of the created Notion page
-}
-
-# Property names in destination databases
-# These properties are common to both destination DBs
-DESTINATION_DB_FIELDS = {
-    "name": "Name",                          # Title
-    "date": "Date",                          # Date
-    "video_link": "Video Link",              # URL
-    "drive_link": "Drive Link",              # URL (link to video on Drive)
-    "google_drive_folder": "Google drive Folder",  # URL (link to folder)
-    "discord_channel": "Discord Channel",    # Select
-    "audio_file_link": "Audio File Link",    # URL (link to audio on Drive)
-    "transcript_file": "Transcript File",    # Files & Media (TXT file from Drive)
-    "transcript_srt_file": "Transcript SRT File"  # Files & Media (SRT file from Drive)
-}
-
-# Specific fields for Docs Videos Database
-DOCS_VIDEOS_SPECIFIC_FIELDS = {
-    # Drive Link and DiscordTradersRelation are relations, but we will omit them for now
-}
-
-# Specific fields for Paradise Island Videos Database
-PARADISE_ISLAND_SPECIFIC_FIELDS = {
-    # Drive Link is relation, but we will handle it as URL per instructions
+    "transcript": "Transcript"  # URL field - link to created Notion page
 }
 
 # ========== VALIDATIONS ==========

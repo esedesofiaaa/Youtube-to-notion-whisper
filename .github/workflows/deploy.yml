@@ -70,11 +70,15 @@ jobs:
           DRIVE_UPLOAD_MAX_RETRIES=${{ vars.DRIVE_UPLOAD_MAX_RETRIES }}
           DRIVE_UPLOAD_RETRY_DELAY=${{ vars.DRIVE_UPLOAD_RETRY_DELAY }}
 
-          # ========== NOTION API (AQUÍ ESTÁ EL CAMBIO IMPORTANTE) ==========
+          # ========== NOTION API ==========
           NOTION_TOKEN=$NOTION_TOKEN
           DISCORD_MESSAGE_DB_ID=${{ vars.DISCORD_MESSAGE_DB_ID }}
-          PARADISE_ISLAND_DB_ID=${{ vars.PARADISE_ISLAND_DB_ID }}
-          DOCS_VIDEOS_DB_ID=${{ vars.DOCS_VIDEOS_DB_ID }}
+          VIDEOS_DB_ID=${{ vars.VIDEOS_DB_ID }}
+
+          # ========== GOOGLE DRIVE FOLDERS ==========
+          DRIVE_FOLDER_MARKET_OUTLOOK=${{ vars.DRIVE_FOLDER_MARKET_OUTLOOK }}
+          DRIVE_FOLDER_MARKET_ANALYSIS=${{ vars.DRIVE_FOLDER_MARKET_ANALYSIS }}
+          DRIVE_FOLDER_AUDIT_PROCESS=${{ vars.DRIVE_FOLDER_AUDIT_PROCESS }}
 
           # Legacy variables
           NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}

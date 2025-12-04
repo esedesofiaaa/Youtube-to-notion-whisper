@@ -24,8 +24,7 @@ from config.settings import (
     CELERY_TASK_RETRY_DELAY
 )
 from config.notion_config import (
-    get_destination_database,
-    DESTINATION_DB_FIELDS
+    get_destination_database
 )
 from utils.helpers import (
     ensure_directory_exists,
@@ -129,9 +128,15 @@ def process_youtube_video(
         if not destination_db:
             raise ValueError(f"No destination database found for channel: {channel}")
 
-        database_id = destination_db["database_id"]
+        action_type = destination_db.get("action_type", "create_new_page")
+        database_id = destination_db.get("database_id")  # May be None for update_origin
         database_name = destination_db["database_name"]
         drive_folder_id_from_config = destination_db.get("drive_folder_id")
+        
+        # Validate database_id is present for create_new_page
+        if action_type == "create_new_page" and not database_id:
+            raise ValueError(f"database_id required for create_new_page action, channel: {channel}")
+        
         logger.info(f"📊 Destination database: {database_name}")
         logger.info(f"📁 Drive folder ID: {drive_folder_id_from_config}")
 
@@ -367,27 +372,53 @@ def process_youtube_video(
         # ============================================================
         # 8. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
         # ============================================================
-        action_type = destination_db.get("action_type", "create_new_page")
+        field_map = destination_db.get("field_map", {})
+        status_value = destination_db.get("status_value")
+        name_format = destination_db.get("name_format", "default")
         logger.info(f"📝 Notion action: {action_type} ({database_name})...")
 
         notion_page_url = None
         notion_page_id = None
 
-        if action_type == "create_new_page":
-            # ---- LEGACY BEHAVIOR: Create new page in destination database ----
-            page_title = f"{video_info.upload_date} - {video_info.title}"
+        # Build page name based on format
+        if name_format == "youtube":
+            page_name = f"YouTube Video: {video_info.title}"
+        else:
+            page_name = f"{video_info.upload_date} - {video_info.title}"
 
+        # Build data dictionary with all available values (logical keys)
+        # Map availability to listing status (Public/Unlisted)
+        listing_status = "Public" if video_info.availability == "public" else "Unlisted"
+        
+        page_data = {
+            "name": page_name,
+            "date": video_info.upload_date,
+            "video_date_time": video_info.upload_date,
+            "video_link": youtube_url,
+            "video_url": youtube_url,  # alias for video_link
+            "live_video_url": youtube_url,
+            "video_id": video_info.video_id,
+            "youtube_channel": video_info.channel,
+            "youtube_listing_status": listing_status,
+            "drive_folder": drive_folder_url,
+            "drive_folder_link": drive_folder_url,
+            "video_file": drive_video_url,
+            "audio_file": drive_audio_url,
+            "transcript_file": drive_transcript_txt_url,
+            "transcript_srt_file": drive_transcript_srt_url,
+            "transcript_text": transcription_text[:2000] if transcription_text else None,
+            "discord_channel": channel,
+            "status": status_value,
+            "length_min": video_info.duration / 60 if video_info.duration else None,
+            "process_errors": None
+        }
+
+        if action_type == "create_new_page":
+            # ---- Create new page in destination database ----
             notion_page = notion_client.create_video_page(
                 database_id=database_id,
-                title=page_title,
-                video_date=video_info.upload_date,
-                video_url=youtube_url,
-                drive_folder_url=drive_folder_url,
-                drive_video_url=drive_video_url or "",
-                discord_channel=channel,
-                audio_file_url=drive_audio_url,
-                transcript_file_url=drive_transcript_txt_url,
-                transcript_srt_file_url=drive_transcript_srt_url
+                field_map=field_map,
+                data=page_data
             )
 
             if not notion_page:
@@ -412,51 +443,32 @@ def process_youtube_video(
                 logger.warning("⚠️ Could not update Transcript field in Discord Message DB")
 
         elif action_type == "update_origin":
-            # ---- NEW BEHAVIOR: Update the origin Discord Message DB entry ----
-            field_map = destination_db.get("field_map", {})
-            status_value = destination_db.get("status_value")
-
+            # ---- Update the origin Discord Message DB entry ----
             # Build properties dynamically based on field_map
             update_props = {}
 
-            # Map: drive_folder -> URL type
-            if "drive_folder" in field_map and drive_folder_url:
-                column_name = field_map["drive_folder"]
-                update_props[column_name] = notion_client.build_url_property(drive_folder_url)
-                logger.info(f"   📁 {column_name}: {drive_folder_url}")
+            for logical_key, column_name in field_map.items():
+                value = page_data.get(logical_key)
+                if value is None:
+                    continue
 
-            # Map: video_file -> Files type
-            if "video_file" in field_map and drive_video_url:
-                column_name = field_map["video_file"]
-                update_props[column_name] = notion_client.build_files_property(
-                    drive_video_url,
-                    filename=f"{video_info.safe_title}.mp4"
-                )
-                logger.info(f"   🎬 {column_name}: {drive_video_url}")
+                # Map by property type based on logical key
+                if logical_key in ("drive_folder", "drive_folder_link", "video_file", 
+                                   "audio_file", "video_link", "video_url", "live_video_url"):
+                    update_props[column_name] = notion_client.build_url_property(value)
+                elif logical_key in ("transcript_file", "transcript_srt_file"):
+                    filename = "Transcript.srt" if "srt" in logical_key else "Transcript.txt"
+                    update_props[column_name] = notion_client.build_files_property(value, filename)
+                elif logical_key in ("status", "discord_channel", "youtube_channel", "youtube_listing_status"):
+                    update_props[column_name] = notion_client.build_select_property(value)
+                elif logical_key in ("date", "video_date_time"):
+                    update_props[column_name] = notion_client.build_date_property(value)
+                elif logical_key == "length_min":
+                    update_props[column_name] = notion_client.build_number_property(value)
+                elif logical_key in ("video_id", "transcript_text", "process_errors", "name"):
+                    update_props[column_name] = notion_client.build_text_property(str(value))
 
-            # Map: audio_file -> Files type
-            if "audio_file" in field_map and drive_audio_url:
-                column_name = field_map["audio_file"]
-                update_props[column_name] = notion_client.build_files_property(
-                    drive_audio_url,
-                    filename=f"{video_info.safe_title}.mp3"
-                )
-                logger.info(f"   🎵 {column_name}: {drive_audio_url}")
-
-            # Map: transcript_file -> Files type
-            if "transcript_file" in field_map and drive_transcript_txt_url:
-                column_name = field_map["transcript_file"]
-                update_props[column_name] = notion_client.build_files_property(
-                    drive_transcript_txt_url,
-                    filename="Transcript.txt"
-                )
-                logger.info(f"   📝 {column_name}: {drive_transcript_txt_url}")
-
-            # Map: status -> Select type
-            if "status" in field_map and status_value:
-                column_name = field_map["status"]
-                update_props[column_name] = notion_client.build_select_property(status_value)
-                logger.info(f"   ✅ {column_name}: {status_value}")
+                logger.info(f"   📌 {column_name}: {str(value)[:50]}...")
 
             # Update the origin page
             if update_props:

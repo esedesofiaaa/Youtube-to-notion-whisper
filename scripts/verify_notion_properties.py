@@ -12,14 +12,29 @@ from notion_client import Client
 load_dotenv()
 
 NOTION_TOKEN = os.getenv('NOTION_TOKEN')
-PARADISE_ISLAND_DB_ID = os.getenv('PARADISE_ISLAND_DB_ID')
-DOCS_VIDEOS_DB_ID = os.getenv('DOCS_VIDEOS_DB_ID')
+VIDEOS_DB_ID = os.getenv('VIDEOS_DB_ID')
 
-# Propiedades requeridas
+# Propiedades requeridas para Videos Database
 REQUIRED_PROPERTIES = {
+    "Name": "title",
+    "Date": "date",
+    "Video Date and time": "date",
+    "Video Link": "url",
+    "Live Video URL": "url",
+    "Video ID": "rich_text",
+    "YouTube Channel": "select",
+    "Google drive Folder": "url",
+    "GoogleDriveFolderLink": "url",
+    "Video FIle Link": "url",
     "Audio File Link": "url",
     "Transcript File": "files",
-    "Transcript SRT File": "files"
+    "Transcript SRT File": "files",
+    "Transcript": "rich_text",
+    "Discord Channel": "select",
+    "Transcript Process Status": "select",
+    "YoutubeListingStatus": "select",
+    "Lenght min": "number",
+    "ProcessErrors": "rich_text"
 }
 
 def check_database_properties(client, database_id, database_name):
@@ -101,23 +116,14 @@ def main():
     # Verificar bases de datos
     results = []
     
-    if PARADISE_ISLAND_DB_ID:
+    if VIDEOS_DB_ID:
         results.append(check_database_properties(
             client, 
-            PARADISE_ISLAND_DB_ID, 
-            "Paradise Island Videos Database"
+            VIDEOS_DB_ID, 
+            "Videos Database"
         ))
     else:
-        print("\n⚠️  PARADISE_ISLAND_DB_ID no configurado")
-    
-    if DOCS_VIDEOS_DB_ID:
-        results.append(check_database_properties(
-            client, 
-            DOCS_VIDEOS_DB_ID, 
-            "Docs Videos Database"
-        ))
-    else:
-        print("\n⚠️  DOCS_VIDEOS_DB_ID no configurado")
+        print("\n⚠️  VIDEOS_DB_ID no configurado")
     
     # Resumen final
     print("\n" + "="*60)

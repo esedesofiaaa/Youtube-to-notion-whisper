@@ -13,10 +13,46 @@ class VideoInfo:
     title: str
     upload_date: str
     safe_title: str  # Sanitized title for file names
+    video_id: str = ""
+    channel: str = ""
+    duration: float = 0.0  # Duration in seconds
+    availability: str = ""  # "public", "unlisted", "private"
+
+    @classmethod
+    def from_yt_info(cls, url: str, info: dict):
+        """Create an instance from yt-dlp info dict."""
+        import datetime
+        from utils.helpers import sanitize_filename
+        from config.settings import DATE_FORMAT
+        
+        title = info.get("title", "Unknown Title")
+        safe_title = sanitize_filename(title)
+        
+        # Parse upload date
+        upload_date_str = info.get("upload_date")
+        if upload_date_str:
+            upload_date = datetime.datetime.strptime(upload_date_str, "%Y%m%d").strftime(DATE_FORMAT)
+        else:
+            ts = info.get("release_timestamp") or info.get("timestamp")
+            if ts:
+                upload_date = datetime.datetime.utcfromtimestamp(int(ts)).strftime(DATE_FORMAT)
+            else:
+                upload_date = datetime.datetime.now().strftime(DATE_FORMAT)
+        
+        return cls(
+            url=url,
+            title=title,
+            upload_date=upload_date,
+            safe_title=safe_title,
+            video_id=info.get("id", ""),
+            channel=info.get("channel", info.get("uploader", "")),
+            duration=info.get("duration", 0.0) or 0.0,
+            availability=info.get("availability", "public") or "public"
+        )
 
     @classmethod
     def from_url(cls, url: str, title: str, upload_date: str):
-        """Create an instance from basic data."""
+        """Create an instance from basic data (legacy)."""
         from utils.helpers import sanitize_filename
         safe_title = sanitize_filename(title)
         return cls(
