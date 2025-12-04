@@ -2,11 +2,14 @@
 Audio transcription module using Faster-Whisper.
 """
 import os
-from typing import Optional
+import io
+import tempfile
+import numpy as np
+from typing import Optional, Generator, BinaryIO, Tuple, List
 from faster_whisper import WhisperModel
 from config.logger import get_logger
 from config.settings import *
-from src.models import MediaFile, TranscriptionResult
+from src.models import MediaFile, TranscriptionResult, StreamingTranscriptionResult
 
 logger = get_logger(__name__)
 
@@ -140,3 +143,229 @@ class AudioTranscriber:
 
         result = self.transcribe(audio_file, language, output_path)
         return result.output_path if result else None
+
+    def transcribe_stream(
+        self,
+        audio_pipe: BinaryIO,
+        language: str = None,
+        chunk_duration: float = None,
+        on_chunk_callback: callable = None
+    ) -> Generator[Tuple[str, List[dict]], None, StreamingTranscriptionResult]:
+        """
+        Transcribe audio from a streaming pipe in real-time.
+
+        This method reads WAV audio data from a pipe, buffers it into chunks,
+        and transcribes each chunk as it becomes available. It yields partial
+        results and returns the complete transcription at the end.
+
+        Args:
+            audio_pipe: File-like object (pipe) providing WAV audio data
+            language: ISO language code (optional, None for auto-detection)
+            chunk_duration: Duration of each chunk in seconds (default from settings)
+            on_chunk_callback: Optional callback function(text, segments) called for each chunk
+
+        Yields:
+            Tuple of (chunk_text, chunk_segments) for each transcribed chunk
+
+        Returns:
+            StreamingTranscriptionResult with complete transcription
+        """
+        chunk_duration = chunk_duration or STREAMING_CHUNK_DURATION
+        sample_rate = STREAMING_SAMPLE_RATE
+        bytes_per_sample = 2  # 16-bit PCM = 2 bytes per sample
+        bytes_per_second = sample_rate * bytes_per_sample
+        chunk_size_bytes = int(chunk_duration * bytes_per_second)
+
+        logger.info(f"🔴 Starting streaming transcription")
+        logger.info(f"   Chunk duration: {chunk_duration}s ({chunk_size_bytes} bytes)")
+        logger.info(f"   Sample rate: {sample_rate}Hz")
+
+        # Skip WAV header (44 bytes for standard WAV)
+        try:
+            wav_header = audio_pipe.read(44)
+            if len(wav_header) < 44:
+                logger.error("❌ Failed to read WAV header from stream")
+                return StreamingTranscriptionResult(
+                    text="",
+                    language=language or "unknown",
+                    language_probability=0.0,
+                    segments=[],
+                    chunks_processed=0,
+                    stream_completed=False
+                )
+        except Exception as e:
+            logger.error(f"❌ Error reading WAV header: {e}")
+            return StreamingTranscriptionResult(
+                text="",
+                language=language or "unknown",
+                language_probability=0.0,
+                segments=[],
+                chunks_processed=0,
+                stream_completed=False
+            )
+
+        # Accumulators
+        all_text = ""
+        all_segments = []
+        chunks_processed = 0
+        detected_language = language
+        language_probability = 0.0
+        audio_buffer = b""
+        time_offset = 0.0
+
+        logger.info("=" * 80)
+        logger.info("📝 LIVE STREAMING TRANSCRIPTION:")
+        logger.info("=" * 80)
+
+        try:
+            while True:
+                # Read audio data in smaller increments for responsiveness
+                read_size = min(chunk_size_bytes - len(audio_buffer), STREAMING_BUFFER_SIZE)
+                chunk_data = audio_pipe.read(read_size)
+
+                if not chunk_data:
+                    # End of stream - process remaining buffer if any
+                    if len(audio_buffer) >= int(STREAMING_MIN_AUDIO_DURATION * bytes_per_second):
+                        text, segments = self._transcribe_audio_buffer(
+                            audio_buffer, sample_rate, detected_language, time_offset
+                        )
+                        if text:
+                            all_text += text
+                            all_segments.extend(segments)
+                            chunks_processed += 1
+                            logger.info(f"[FINAL] {text}")
+                            if on_chunk_callback:
+                                on_chunk_callback(text, segments)
+                            yield (text, segments)
+                    break
+
+                audio_buffer += chunk_data
+
+                # Process when buffer reaches chunk size
+                if len(audio_buffer) >= chunk_size_bytes:
+                    text, segments = self._transcribe_audio_buffer(
+                        audio_buffer[:chunk_size_bytes], sample_rate, detected_language, time_offset
+                    )
+
+                    if text:
+                        all_text += text
+                        all_segments.extend(segments)
+                        chunks_processed += 1
+
+                        # Update detected language from first successful transcription
+                        if not detected_language and segments:
+                            detected_language = language or "en"
+
+                        logger.info(f"[{chunks_processed}] {text}")
+                        if on_chunk_callback:
+                            on_chunk_callback(text, segments)
+                        yield (text, segments)
+
+                    # Update time offset and clear processed buffer
+                    time_offset += chunk_duration
+                    audio_buffer = audio_buffer[chunk_size_bytes:]
+
+        except BrokenPipeError:
+            logger.warning("⚠️ Stream pipe broken - processing remaining audio")
+        except Exception as e:
+            logger.error(f"❌ Error during streaming transcription: {e}", exc_info=True)
+
+        logger.info("=" * 80)
+        logger.info(f"✅ Streaming transcription complete: {chunks_processed} chunks processed")
+
+        return StreamingTranscriptionResult(
+            text=all_text.strip(),
+            language=detected_language or "unknown",
+            language_probability=language_probability,
+            segments=all_segments,
+            chunks_processed=chunks_processed,
+            stream_completed=True
+        )
+
+    def _transcribe_audio_buffer(
+        self,
+        audio_bytes: bytes,
+        sample_rate: int,
+        language: str = None,
+        time_offset: float = 0.0
+    ) -> Tuple[str, List[dict]]:
+        """
+        Transcribe a buffer of raw PCM audio data.
+
+        Args:
+            audio_bytes: Raw PCM audio bytes (16-bit signed, mono)
+            sample_rate: Sample rate of the audio
+            language: Language code (optional)
+            time_offset: Time offset to add to segment timestamps
+
+        Returns:
+            Tuple of (transcribed_text, segments_list)
+        """
+        try:
+            # Convert bytes to numpy array (16-bit signed integers)
+            audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+
+            # Normalize to float32 in range [-1, 1] (required by Whisper)
+            audio_float = audio_array.astype(np.float32) / 32768.0
+
+            # Transcribe using faster-whisper
+            # Note: faster-whisper can accept numpy arrays directly
+            segments, info = self.model.transcribe(
+                audio_float,
+                language=language,
+                **WHISPER_PARAMS
+            )
+
+            # Collect segments with adjusted timestamps
+            text = ""
+            segments_list = []
+            for segment in segments:
+                text += segment.text
+                segments_list.append({
+                    'start': segment.start + time_offset,
+                    'end': segment.end + time_offset,
+                    'text': segment.text
+                })
+
+            return text, segments_list
+
+        except Exception as e:
+            logger.error(f"❌ Error transcribing audio buffer: {e}", exc_info=True)
+            return "", []
+
+    def transcribe_stream_to_result(
+        self,
+        audio_pipe: BinaryIO,
+        language: str = None
+    ) -> StreamingTranscriptionResult:
+        """
+        Convenience method to transcribe a stream and collect all results.
+
+        This method consumes the generator and returns the final result.
+        Use transcribe_stream() directly if you need real-time updates.
+
+        Args:
+            audio_pipe: File-like object (pipe) providing WAV audio data
+            language: ISO language code (optional)
+
+        Returns:
+            StreamingTranscriptionResult with complete transcription
+        """
+        generator = self.transcribe_stream(audio_pipe, language)
+
+        # Consume all yielded chunks
+        result = None
+        try:
+            while True:
+                next(generator)
+        except StopIteration as e:
+            result = e.value
+
+        return result or StreamingTranscriptionResult(
+            text="",
+            language=language or "unknown",
+            language_probability=0.0,
+            segments=[],
+            chunks_processed=0,
+            stream_completed=False
+        )

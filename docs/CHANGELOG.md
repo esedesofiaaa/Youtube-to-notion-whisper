@@ -1,5 +1,186 @@
 # Changelog
 
+## [Pipeline Unificado de Streaming - 2025-12-03]
+
+### 🎯 UNIFICACIÓN: Pipeline de Streaming como Estándar
+
+#### Cambio Principal
+Se unificó toda la lógica de procesamiento de videos en un **único pipeline de streaming**.
+La tarea `process_youtube_video` ahora utiliza la arquitectura de streaming para **TODOS** los videos,
+tanto lives como VOD (videos normales), con fallback automático al método tradicional si falla.
+
+**Beneficios:**
+- ✅ **Más eficiente**: Transcribe mientras descarga (no espera a que termine)
+- ✅ **Un solo código**: Mantiene la compatibilidad con el webhook existente
+- ✅ **Resiliente**: Fallback automático si el streaming falla
+- ✅ **Funciona igual**: Para VOD y para Live Streams
+
+### 🔧 Arquitectura Unificada
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    process_youtube_video                        │
+│  (Tarea única para TODO el procesamiento de videos)            │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  INTENTO 1: Pipeline de Streaming                               │
+│  ┌─────────┐      ┌─────────────────────────────┐              │
+│  │ yt-dlp  │─────>│ FFmpeg                      │              │
+│  │         │ pipe │  ├─> video.mkv (disco)      │              │
+│  └─────────┘      │  └─> WAV 16kHz ──> Whisper  │              │
+│                   └─────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    ¿Falló streaming?
+                              │
+              ┌───────────────┴───────────────┐
+              │ SÍ                            │ NO
+              ▼                               ▼
+┌─────────────────────────┐     ┌─────────────────────────────────┐
+│  FALLBACK: Tradicional  │     │  Continúa con subida atómica    │
+│  • download_video()     │     │  • Upload Drive                 │
+│  • download_audio()     │     │  • Create Notion page           │
+│  • transcribe()         │     │  • Update Discord DB            │
+└─────────────────────────┘     └─────────────────────────────────┘
+```
+
+### 📝 Cambios en `src/tasks.py`
+
+- **ELIMINADO**: Tarea `process_live_stream` (ya no existe)
+- **MODIFICADO**: `process_youtube_video` ahora usa streaming pipeline + fallback
+- **NUEVO CAMPO EN RESULTADO**: `processing_mode` = "streaming" | "fallback"
+- **NUEVO CAMPO EN RESULTADO**: `chunks_processed` = número de chunks transcritos
+
+### ✅ Compatibilidad
+
+- ✅ **Sin cambios en el webhook**: `/webhook/process-video` funciona igual
+- ✅ **Sin cambios en n8n**: La integración sigue funcionando
+- ✅ **Sin cambios en la API**: Mismos parámetros de entrada y salida
+
+### 📦 Resultado de la Tarea
+
+```python
+{
+    "status": "success",
+    "task_id": "...",
+    "youtube_url": "...",
+    "video_title": "...",
+    "notion_page_url": "...",
+    "drive_folder_url": "...",
+    "drive_video_url": "...",
+    "transcription_length": 12345,
+    "database_name": "Paradise Island Videos",
+    "processing_mode": "streaming",  # o "fallback"
+    "chunks_processed": 42           # solo relevante en modo streaming
+}
+```
+
+---
+
+## [Streaming Transcription - 2025-12-03]
+
+### 🎯 Nueva Funcionalidad: Transcripción en Vivo (Streaming)
+
+#### Pipeline Híbrido de Procesamiento
+Se implementó una arquitectura de **"Single-Pass Processing con Subida Diferida"** que permite:
+- **Transcripción en tiempo real** mientras se descarga el video
+- **Guardado simultáneo** del video en disco (MKV) para backup
+- **Subida atómica** a Drive y Notion solo al finalizar el stream
+
+### ✨ Nuevos Componentes
+
+#### 1. Streaming en YouTubeDownloader (`src/youtube_downloader.py`)
+- **`stream_and_capture(video_info, save_video=True)`**: Nuevo método que:
+  - Ejecuta `yt-dlp` enviando datos a `stdout`
+  - `FFmpeg` recibe y bifurca el stream:
+    - **Output 1**: Guarda video MKV en disco (codecs copiados, sin re-encoding)
+    - **Output 2**: Envía audio WAV 16kHz mono por pipe para Whisper
+- **`stop_stream(process)`**: Detiene gracefully los procesos de streaming
+- **`is_stream_active(process)`**: Verifica si el stream sigue activo
+- **`get_stream_errors(process)`**: Obtiene errores de FFmpeg
+
+#### 2. Transcripción por Streaming (`src/transcriber.py`)
+- **`transcribe_stream(audio_pipe, language, chunk_duration)`**: 
+  - Lee audio desde pipe en chunks configurables (default 30s)
+  - Transcribe cada chunk con Whisper en tiempo real
+  - Genera resultados parciales via `yield`
+  - Maneja buffer de audio para evitar cortar palabras
+- **`_transcribe_audio_buffer(audio_bytes, sample_rate)`**:
+  - Convierte bytes PCM a numpy array float32
+  - Transcribe usando faster-whisper directamente en memoria
+
+#### 3. Nueva Tarea Celery (`src/tasks.py`)
+- **`process_live_stream`**: Tarea dedicada para streaming que:
+  1. Inicia pipeline yt-dlp → FFmpeg
+  2. Transcribe en vivo acumulando texto
+  3. Al finalizar: subida atómica a Drive + creación en Notion
+  4. **Fallback automático**: Si streaming falla, usa método tradicional
+
+#### 4. Nuevo Modelo (`src/models.py`)
+- **`StreamingTranscriptionResult`**: Extiende TranscriptionResult con:
+  - `chunks_processed`: Número de chunks procesados
+  - `stream_completed`: Indica si el stream finalizó correctamente
+  - `to_transcription_result()`: Conversión para compatibilidad
+
+#### 5. Nuevas Configuraciones (`config/settings.py`)
+```python
+STREAMING_SAMPLE_RATE = 16000      # Hz para Whisper
+STREAMING_BUFFER_SIZE = 65536      # 64KB buffer
+STREAMING_CHUNK_DURATION = 30.0    # segundos por chunk
+STREAMING_MIN_AUDIO_DURATION = 5.0 # mínimo para transcribir
+STREAMING_MAX_RETRIES = 3          # reintentos antes de fallback
+STREAMING_READ_TIMEOUT = 60.0      # timeout para datos del stream
+```
+
+### 🔧 Arquitectura del Pipeline
+
+```
+┌─────────┐      ┌─────────────────────────────────────────┐
+│ yt-dlp  │─────>│ FFmpeg                                  │
+│ (video) │ pipe │  ├─> Output 1: video.mkv (disco)       │
+└─────────┘      │  └─> Output 2: WAV 16kHz ──> Python    │
+                 └─────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+                 ┌─────────────────────────────────────────┐
+                 │ AudioTranscriber.transcribe_stream()    │
+                 │  ├─> Buffer audio (chunks de 30s)       │
+                 │  ├─> Transcribir con Whisper            │
+                 │  └─> yield (text, segments)             │
+                 └─────────────────────────────────────────┘
+                                                    │
+                                                    ▼ (Al finalizar stream)
+                 ┌─────────────────────────────────────────┐
+                 │ Subida Atómica                          │
+                 │  ├─> Upload video a Drive               │
+                 │  ├─> Upload transcripts (TXT/SRT)       │
+                 │  └─> Crear página en Notion             │
+                 └─────────────────────────────────────────┘
+```
+
+### 📝 Uso
+
+```python
+from src.tasks import process_live_stream
+
+# Llamar la tarea de streaming
+result = process_live_stream.delay(
+    discord_entry_id="...",
+    youtube_url="https://youtube.com/watch?v=...",
+    channel="🎙・market-outlook",
+    use_fallback_on_error=True  # Fallback automático si falla streaming
+)
+```
+
+### ⚠️ Requisitos del Sistema
+- **FFmpeg** debe estar instalado y en PATH
+- **yt-dlp** debe estar instalado y en PATH
+- **NumPy** para conversión de audio a arrays
+
+---
+
 ## [Integración con Notion y Sistema Asíncrono - 2025-11-16]
 
 ### 🎯 Nueva Funcionalidad Principal

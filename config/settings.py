@@ -126,3 +126,24 @@ WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'change-this-secret-in-production')
 # ========== FLOWER DASHBOARD ==========
 FLOWER_PORT = int(os.getenv('FLOWER_PORT', '5555'))
 FLOWER_BASIC_AUTH = os.getenv('FLOWER_BASIC_AUTH', '')  # Format: "user:password"
+
+# ========== STREAMING TRANSCRIPTION CONFIGURATION ==========
+# Audio sample rate for Whisper (16kHz is optimal)
+STREAMING_SAMPLE_RATE = int(os.getenv('STREAMING_SAMPLE_RATE', '16000'))
+
+# Buffer size for streaming (in bytes) - larger = more latency but more stable
+STREAMING_BUFFER_SIZE = int(os.getenv('STREAMING_BUFFER_SIZE', '65536'))  # 64KB
+
+# Chunk duration in seconds for transcription batching
+# Whisper works best with 30-second chunks
+STREAMING_CHUNK_DURATION = float(os.getenv('STREAMING_CHUNK_DURATION', '30.0'))
+
+# Minimum audio duration (seconds) before starting transcription
+# Helps avoid partial word transcriptions
+STREAMING_MIN_AUDIO_DURATION = float(os.getenv('STREAMING_MIN_AUDIO_DURATION', '5.0'))
+
+# Maximum retries for streaming before falling back to traditional method
+STREAMING_MAX_RETRIES = int(os.getenv('STREAMING_MAX_RETRIES', '3'))
+
+# Timeout (seconds) for waiting on stream data before considering it stalled
+STREAMING_READ_TIMEOUT = float(os.getenv('STREAMING_READ_TIMEOUT', '60.0'))
