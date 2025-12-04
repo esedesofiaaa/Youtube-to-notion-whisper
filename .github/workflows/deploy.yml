@@ -119,7 +119,7 @@ jobs:
             pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org
             
             # Reiniciar servicio
-            sudo systemctl restart Youtube-to-notion-whisper
+            sudo systemctl restart youtube-whisper
             
             # Verificar salud
             sleep 15
