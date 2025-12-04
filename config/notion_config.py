@@ -178,6 +178,7 @@ DISCORD_DB_FIELDS = {
 # Valid YouTube URL patterns
 YOUTUBE_URL_PATTERNS = [
     "youtube.com/watch?v=",
+    "youtube.com/live/",
     "youtu.be/",
     "youtube.com/shorts/",
     "youtube.com/embed/"
