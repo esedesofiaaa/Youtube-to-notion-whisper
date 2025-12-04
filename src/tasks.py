@@ -1,5 +1,10 @@
 """
 Asynchronous Celery tasks for video processing.
+
+This module uses a unified streaming pipeline for all video processing:
+- Downloads video while simultaneously transcribing audio in real-time
+- Falls back to traditional sequential processing if streaming fails
+- Atomic upload to Drive and Notion creation after processing completes
 """
 import os
 from celery import Task
@@ -9,7 +14,7 @@ from src.youtube_downloader import YouTubeDownloader
 from src.transcriber import AudioTranscriber
 from src.drive_manager import DriveManager
 from src.notion_client import NotionClient
-from src.models import MediaFile
+from src.models import MediaFile, StreamingTranscriptionResult
 from config.logger import get_logger
 from config.settings import (
     TEMP_DOWNLOAD_DIR,
@@ -58,7 +63,7 @@ class CallbackTask(Task):
     default_retry_delay=CELERY_TASK_RETRY_DELAY,
     autoretry_for=(Exception,),
     retry_backoff=True,
-    retry_backoff_max=600,  # Máximo 10 minutos de backoff
+    retry_backoff_max=600,  # Max 10 minutes backoff
     retry_jitter=True
 )
 def process_youtube_video(
@@ -69,19 +74,38 @@ def process_youtube_video(
     parent_drive_folder_id: str = None
 ) -> dict:
     """
-    Main task: process a YouTube video and create entry in Notion.
+    Main task: Process a YouTube video/stream using unified streaming pipeline.
+
+    This task uses a hybrid Single-Pass Processing architecture:
+    1. Starts streaming download via yt-dlp -> FFmpeg pipeline
+    2. FFmpeg simultaneously saves video to disk AND pipes audio for transcription
+    3. Transcription happens in real-time as audio data arrives
+    4. Once stream/video ends: atomic upload to Drive + create Notion page
+
+    If the streaming pipeline fails (broken pipe, network issues, etc.),
+    automatically falls back to traditional sequential processing.
+
+    Works for both:
+    - Live streams (infinite until ended)
+    - VOD/regular videos (finite, more efficient than traditional)
 
     Args:
         discord_entry_id: ID of the entry in Discord Message Database
-        youtube_url: YouTube video URL
+        youtube_url: YouTube video/stream URL
         channel: Discord channel (to determine destination DB)
         parent_drive_folder_id: ID of parent folder in Drive (optional)
 
     Returns:
-        dict: Information about the completed task
+        dict: Information about the completed task including:
+            - status: 'success'
+            - processing_mode: 'streaming' or 'fallback'
+            - notion_page_url: URL of created Notion page
+            - drive_folder_url: URL of Drive folder
+            - transcription_length: Character count of transcription
+            - chunks_processed: Number of audio chunks (streaming mode only)
 
     Raises:
-        Exception: If any error occurs during processing
+        Exception: If processing fails after all retries
     """
     task_id = self.request.id
     logger.info("=" * 80)
@@ -89,10 +113,18 @@ def process_youtube_video(
     logger.info(f"   YouTube URL: {youtube_url}")
     logger.info(f"   Channel: {channel}")
     logger.info(f"   Discord Entry ID: {discord_entry_id}")
+    logger.info(f"   Mode: Unified Streaming Pipeline")
     logger.info("=" * 80)
 
+    # Track processing mode for result
+    streaming_failed = False
+    stream_error = None
+    chunks_count = 0
+
     try:
-        # 1. Validate and get configuration
+        # ============================================================
+        # 1. VALIDATE AND GET CONFIGURATION
+        # ============================================================
         destination_db = get_destination_database(channel)
         if not destination_db:
             raise ValueError(f"No destination database found for channel: {channel}")
@@ -103,7 +135,9 @@ def process_youtube_video(
         logger.info(f"📊 Destination database: {database_name}")
         logger.info(f"📁 Drive folder ID: {drive_folder_id_from_config}")
 
-        # 2. Initialize components
+        # ============================================================
+        # 2. INITIALIZE COMPONENTS
+        # ============================================================
         ensure_directory_exists(TEMP_DOWNLOAD_DIR)
         downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
@@ -113,120 +147,226 @@ def process_youtube_video(
         if not drive_manager.service:
             raise Exception("Could not authenticate with Google Drive API")
 
-        # 3. Get video information
+        # ============================================================
+        # 3. GET VIDEO INFORMATION
+        # ============================================================
         logger.info("📹 Getting video information...")
         video_info = downloader.get_video_info(youtube_url)
         if not video_info:
             raise Exception(f"Could not get video information: {youtube_url}")
 
-        # 4. Get parent_folder_id: use config value or webhook parameter
+        # ============================================================
+        # 4. RESOLVE DRIVE FOLDER
+        # ============================================================
         if not parent_drive_folder_id:
-            # Use the folder ID from channel configuration
             parent_drive_folder_id = drive_folder_id_from_config
             logger.info(f"📂 Using Drive folder from channel config: {parent_drive_folder_id}")
         
         if not parent_drive_folder_id:
             raise ValueError(f"No Drive folder ID configured for channel: {channel}")
 
-        # 5. Create folder in Drive
+        # ============================================================
+        # 5. CREATE FOLDER IN DRIVE
+        # ============================================================
         folder_name = f"{video_info.upload_date} - {video_info.safe_title}"
         logger.info(f"📁 Creating folder in Drive: {folder_name}")
         drive_folder_id = drive_manager.create_folder(folder_name, parent_drive_folder_id)
         if not drive_folder_id:
             raise Exception("Could not create folder in Google Drive")
 
-        # Build Drive folder URL
         drive_folder_url = f"https://drive.google.com/drive/folders/{drive_folder_id}"
 
-        # 6. Download video
-        logger.info("⬇️ Downloading video...")
-        video_file = downloader.download_video(video_info)
-        drive_video_url = None
-
-        if video_file and video_file.exists():
-            try:
-                uploaded, drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
-                if drive_file:
-                    drive_video_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                    logger.info(f"✅ Video uploaded to Drive: {drive_video_url}")
-            except Exception as e:
-                logger.error(f"❌ Error uploading video: {e}", exc_info=True)
-            finally:
-                safe_remove_file(video_file.path)
-
-        # 7. Download audio and transcribe
-        logger.info("🎵 Downloading audio...")
-        audio_file = downloader.download_audio(video_info)
+        # ============================================================
+        # 6. STREAMING PIPELINE: DOWNLOAD + TRANSCRIBE SIMULTANEOUSLY
+        # ============================================================
+        logger.info("🔴 Starting streaming pipeline (yt-dlp → FFmpeg → Whisper)...")
+        
+        video_path = None
         transcription_text = ""
+        all_segments = []
+        ffmpeg_process = None
+
+        try:
+            # Start the stream (saves video to disk + pipes audio for transcription)
+            ffmpeg_process, audio_pipe, video_path = downloader.stream_and_capture(
+                video_info, save_video=True
+            )
+
+            if not ffmpeg_process or not audio_pipe:
+                raise Exception("Failed to start streaming pipeline")
+
+            # Transcribe from the audio pipe in real-time
+            logger.info("🎤 Starting real-time transcription...")
+            
+            # Consume the streaming transcription generator
+            for chunk_text, chunk_segments in transcriber.transcribe_stream(
+                audio_pipe, language="en"
+            ):
+                transcription_text += chunk_text
+                all_segments.extend(chunk_segments)
+                chunks_count += 1
+                logger.info(f"   📝 Chunk {chunks_count}: {len(chunk_text)} chars transcribed")
+
+            # Wait for FFmpeg to finish (stream/video ended)
+            ffmpeg_process.wait()
+
+            # Check for FFmpeg errors
+            ffmpeg_errors = downloader.get_stream_errors(ffmpeg_process)
+            if ffmpeg_errors:
+                logger.warning(f"⚠️ FFmpeg warnings: {ffmpeg_errors}")
+
+            logger.info(f"✅ Streaming complete: {chunks_count} chunks, {len(transcription_text)} chars")
+
+        except (BrokenPipeError, IOError) as e:
+            streaming_failed = True
+            stream_error = str(e)
+            logger.error(f"❌ Stream pipeline error (BrokenPipe/IO): {e}")
+            
+            # Try to stop any running processes
+            if ffmpeg_process:
+                downloader.stop_stream(ffmpeg_process)
+
+        except Exception as e:
+            streaming_failed = True
+            stream_error = str(e)
+            logger.error(f"❌ Streaming error: {e}", exc_info=True)
+            
+            if ffmpeg_process:
+                downloader.stop_stream(ffmpeg_process)
+
+        # ============================================================
+        # 6b. FALLBACK: TRADITIONAL PROCESSING IF STREAMING FAILED
+        # ============================================================
+        if streaming_failed:
+            logger.warning("=" * 60)
+            logger.warning("⚠️ STREAMING FAILED - Falling back to traditional processing")
+            logger.warning(f"   Error: {stream_error}")
+            logger.warning("=" * 60)
+            
+            # Reset variables
+            video_path = None
+            transcription_text = ""
+            all_segments = []
+            chunks_count = 0
+
+            # Traditional download: video
+            logger.info("⬇️ Downloading video (fallback mode)...")
+            video_file = downloader.download_video(video_info)
+            if video_file and video_file.exists():
+                video_path = video_file.path
+                logger.info(f"✅ Video downloaded: {video_file.filename}")
+
+            # Traditional download: audio
+            logger.info("🎵 Downloading audio (fallback mode)...")
+            audio_file = downloader.download_audio(video_info)
+            
+            if audio_file and audio_file.exists():
+                # Traditional transcription
+                logger.info("🎤 Transcribing audio (fallback mode)...")
+                transcription_result = transcriber.transcribe(audio_file, language="en")
+                if transcription_result:
+                    transcription_text = transcription_result.text
+                    all_segments = transcription_result.segments or []
+                    logger.info(f"✅ Transcription complete: {len(transcription_text)} chars")
+                safe_remove_file(audio_file.path)
+            else:
+                logger.warning("⚠️ Could not download audio for transcription")
+
+        # ============================================================
+        # 7. ATOMIC UPLOAD TO DRIVE (after processing completes)
+        # ============================================================
+        logger.info("📤 Starting atomic upload to Drive...")
+        
+        drive_video_url = None
         drive_audio_url = None
         drive_transcript_txt_url = None
         drive_transcript_srt_url = None
 
-        if audio_file and audio_file.exists():
+        # Upload video if exists
+        if video_path and os.path.exists(video_path):
+            logger.info(f"📤 Uploading video: {os.path.basename(video_path)}")
+            video_file = MediaFile(
+                path=video_path,
+                filename=os.path.basename(video_path),
+                file_type='video'
+            )
             try:
-                # Upload audio to Drive first
-                uploaded, drive_audio_file = drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
-                if drive_audio_file:
-                    drive_audio_url = f"https://drive.google.com/file/d/{drive_audio_file.id}/view"
-                    logger.info(f"✅ Audio uploaded to Drive: {drive_audio_url}")
-
-                # Transcribe
-                txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
-                    date=video_info.upload_date,
-                    title=video_info.safe_title
-                )
-                local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
-
-                logger.info("🎤 Starting transcription...")
-                transcription_result = transcriber.transcribe(
-                    audio_file,
-                    language="en",
-                    output_path=local_txt_path
-                )
-
-                if transcription_result:
-                    transcription_text = transcription_result.text
-
-                    # Generate and save SRT file
-                    srt_filename = txt_filename.replace('.txt', '.srt')
-                    local_srt_path = os.path.join(TEMP_DOWNLOAD_DIR, srt_filename)
-                    
-                    logger.info("📄 Generating SRT file...")
-                    transcription_result.save_srt(local_srt_path)
-                    logger.info(f"✅ SRT file generated: {srt_filename}")
-
-                    # Upload transcription TXT to Drive
-                    if transcription_result.output_path:
-                        transcription_txt_file = MediaFile(
-                            path=transcription_result.output_path,
-                            filename=os.path.basename(transcription_result.output_path),
-                            file_type='transcription'
-                        )
-                        uploaded_txt, drive_txt_file = drive_manager.upload_if_not_exists(transcription_txt_file, drive_folder_id)
-                        if drive_txt_file:
-                            drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_txt_file.id}/view"
-                            logger.info(f"✅ Transcript TXT uploaded to Drive: {drive_transcript_txt_url}")
-                        safe_remove_file(transcription_txt_file.path)
-
-                    # Upload transcription SRT to Drive
-                    if transcription_result.srt_path:
-                        transcription_srt_file = MediaFile(
-                            path=transcription_result.srt_path,
-                            filename=os.path.basename(transcription_result.srt_path),
-                            file_type='transcription'
-                        )
-                        uploaded_srt, drive_srt_file = drive_manager.upload_if_not_exists(transcription_srt_file, drive_folder_id)
-                        if drive_srt_file:
-                            drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_srt_file.id}/view"
-                            logger.info(f"✅ Transcript SRT uploaded to Drive: {drive_transcript_srt_url}")
-                        safe_remove_file(transcription_srt_file.path)
-
+                uploaded, drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
+                if drive_file:
+                    drive_video_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                    logger.info(f"✅ Video uploaded: {drive_video_url}")
             except Exception as e:
-                logger.error(f"❌ Error in transcription: {e}", exc_info=True)
+                logger.error(f"❌ Error uploading video: {e}")
             finally:
-                safe_remove_file(audio_file.path)
+                safe_remove_file(video_path)
 
-        # 8. Create page in Notion (destination database)
+        # Save and upload transcription files
+        if transcription_text:
+            txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
+                date=video_info.upload_date,
+                title=video_info.safe_title
+            )
+            local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
+            local_srt_path = local_txt_path.replace('.txt', '.srt')
+
+            # Save TXT file
+            with open(local_txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcription_text.strip())
+            logger.info(f"✅ Transcription saved: {txt_filename}")
+
+            # Save SRT file if we have segments with timestamps
+            if all_segments:
+                try:
+                    temp_result = StreamingTranscriptionResult(
+                        text=transcription_text,
+                        language="en",
+                        language_probability=1.0,
+                        segments=all_segments,
+                        chunks_processed=chunks_count,
+                        stream_completed=True
+                    )
+                    temp_result.save_srt(local_srt_path)
+                    logger.info(f"✅ SRT file generated: {os.path.basename(local_srt_path)}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not generate SRT file: {e}")
+
+            # Upload TXT to Drive
+            if os.path.exists(local_txt_path):
+                txt_file = MediaFile(
+                    path=local_txt_path,
+                    filename=os.path.basename(local_txt_path),
+                    file_type='transcription'
+                )
+                try:
+                    uploaded, drive_file = drive_manager.upload_if_not_exists(txt_file, drive_folder_id)
+                    if drive_file:
+                        drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                        logger.info(f"✅ Transcript TXT uploaded: {drive_transcript_txt_url}")
+                except Exception as e:
+                    logger.error(f"❌ Error uploading TXT: {e}")
+                finally:
+                    safe_remove_file(local_txt_path)
+
+            # Upload SRT to Drive
+            if os.path.exists(local_srt_path):
+                srt_file = MediaFile(
+                    path=local_srt_path,
+                    filename=os.path.basename(local_srt_path),
+                    file_type='transcription'
+                )
+                try:
+                    uploaded, drive_file = drive_manager.upload_if_not_exists(srt_file, drive_folder_id)
+                    if drive_file:
+                        drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                        logger.info(f"✅ Transcript SRT uploaded: {drive_transcript_srt_url}")
+                except Exception as e:
+                    logger.error(f"❌ Error uploading SRT: {e}")
+                finally:
+                    safe_remove_file(local_srt_path)
+
+        # ============================================================
+        # 8. CREATE NOTION PAGE (atomic, after everything is ready)
+        # ============================================================
         logger.info(f"📝 Creating page in Notion ({database_name})...")
         page_title = f"{video_info.upload_date} - {video_info.title}"
 
@@ -250,12 +390,14 @@ def process_youtube_video(
         notion_page_id = notion_page.get("id")
         logger.info(f"✅ Notion page created: {notion_page_url}")
 
-        # 8b. Add transcript as dropdown block in Notion page
+        # Add transcript as dropdown block in Notion page
         if transcription_text:
-            logger.info("📝 Adding transcript as dropdown block to Notion page...")
+            logger.info("📝 Adding transcript dropdown to Notion page...")
             notion_client.add_transcript_dropdown(notion_page_id, transcription_text)
 
-        # 9. Update Transcript field in Discord Message Database
+        # ============================================================
+        # 9. UPDATE DISCORD MESSAGE DATABASE
+        # ============================================================
         logger.info("🔄 Updating Transcript field in Discord Message DB...")
         update_success = notion_client.update_transcript_field(
             discord_entry_id,
@@ -263,12 +405,18 @@ def process_youtube_video(
         )
 
         if not update_success:
-            logger.error("❌ ERROR: Could not update Transcript field")
+            logger.warning("⚠️ Could not update Transcript field in Discord Message DB")
 
-        # 10. Clean up temporary files
+        # ============================================================
+        # 10. CLEANUP
+        # ============================================================
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
 
-        # Task result
+        # ============================================================
+        # RESULT
+        # ============================================================
+        processing_mode = "fallback" if streaming_failed else "streaming"
+        
         result = {
             "status": "success",
             "task_id": task_id,
@@ -278,23 +426,30 @@ def process_youtube_video(
             "drive_folder_url": drive_folder_url,
             "drive_video_url": drive_video_url,
             "transcription_length": len(transcription_text),
-            "database_name": database_name
+            "database_name": database_name,
+            "processing_mode": processing_mode,
+            "chunks_processed": chunks_count
         }
 
         logger.info("=" * 80)
-        logger.info("✅ Processing completed successfully")
+        logger.info("✅ Video processing completed successfully")
+        logger.info(f"   Mode: {processing_mode.upper()}")
         logger.info(f"   Notion Page: {notion_page_url}")
+        logger.info(f"   Drive Folder: {drive_folder_url}")
+        if processing_mode == "streaming":
+            logger.info(f"   Chunks Processed: {chunks_count}")
+        logger.info(f"   Transcription: {len(transcription_text)} characters")
         logger.info("=" * 80)
 
         return result
 
     except SoftTimeLimitExceeded:
         logger.error(f"⏱️ Task {task_id} exceeded time limit")
+        clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 
     except Exception as e:
         logger.error(f"❌ Error in video processing: {e}", exc_info=True)
-        # Clean up on error
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 

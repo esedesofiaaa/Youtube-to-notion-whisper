@@ -3,8 +3,10 @@ YouTube downloader module using yt-dlp.
 """
 import os
 import datetime
+import subprocess
+import shutil
 import yt_dlp
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Generator, BinaryIO
 from config.logger import get_logger
 from config.settings import *
 from src.models import VideoInfo, MediaFile
@@ -214,3 +216,184 @@ class YouTubeDownloader:
         except Exception as e:
             logger.error(f"❌ Error downloading audio {video_info.url}: {e}", exc_info=True)
             return None
+
+    def stream_and_capture(
+        self,
+        video_info: VideoInfo,
+        save_video: bool = True
+    ) -> Tuple[Optional[subprocess.Popen], Optional[BinaryIO], Optional[str]]:
+        """
+        Stream video from YouTube while simultaneously:
+        1. Saving the video (MKV) to disk for backup
+        2. Piping audio (WAV 16kHz mono) to stdout for real-time transcription
+
+        Architecture: yt-dlp -> FFmpeg (multiple outputs)
+        - Output 1: MKV file on disk (video + audio, copy codec)
+        - Output 2: WAV audio stream to pipe (16kHz mono for Whisper)
+
+        Args:
+            video_info: VideoInfo object with video details
+            save_video: Whether to save the video file to disk
+
+        Returns:
+            Tuple of (ffmpeg_process, audio_pipe, video_path)
+            - ffmpeg_process: The subprocess.Popen object (for management)
+            - audio_pipe: File-like object to read WAV audio from
+            - video_path: Path to the saved MKV file (or None if save_video=False)
+        """
+        filename_base = f"{video_info.upload_date} - {video_info.safe_title}"
+        video_path = os.path.join(self.output_dir, f"{filename_base}.mkv") if save_video else None
+
+        # Build yt-dlp command to output to stdout
+        # Using best format with video+audio for the saved file
+        yt_dlp_cmd = [
+            "yt-dlp",
+            "--quiet",
+            "--no-warnings",
+            "-f", "bv*+ba/b",  # Best video + best audio, or best combined
+            "-o", "-",  # Output to stdout
+            "--no-part",
+            "--retries", str(YT_DLP_RETRIES),
+            "--fragment-retries", str(YT_DLP_FRAGMENT_RETRIES),
+            "--socket-timeout", str(YT_DLP_SOCKET_TIMEOUT),
+            "--force-ipv4",
+            "--extractor-args", "youtube:player_client=android,ios,tv;player_skip=web_safari,web",
+            "--user-agent", YT_DLP_USER_AGENT,
+            video_info.url
+        ]
+
+        # Build FFmpeg command with multiple outputs
+        # Input: pipe from yt-dlp
+        # Output 1: MKV file (copy codecs, preserves quality)
+        # Output 2: WAV audio to stdout (16kHz mono for Whisper)
+        ffmpeg_cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+        ffmpeg_cmd.extend(["-i", "pipe:0"])  # Input from stdin
+
+        if save_video and video_path:
+            # Output 1: Save video file (copy codecs for speed)
+            ffmpeg_cmd.extend([
+                "-map", "0:v?",  # Video stream (optional, ? means don't fail if missing)
+                "-map", "0:a?",  # Audio stream (optional)
+                "-c", "copy",    # Copy codecs (no re-encoding)
+                "-f", "matroska",
+                video_path
+            ])
+
+        # Output 2: Audio stream for transcription (always)
+        ffmpeg_cmd.extend([
+            "-map", "0:a:0",           # First audio stream
+            "-ar", str(STREAMING_SAMPLE_RATE),  # 16000 Hz for Whisper
+            "-ac", "1",                # Mono
+            "-f", "wav",               # WAV format
+            "-acodec", "pcm_s16le",    # 16-bit PCM
+            "pipe:1"                   # Output to stdout
+        ])
+
+        try:
+            logger.info(f"🔴 Starting live stream capture: {video_info.url}")
+            logger.info(f"   Video will be saved to: {video_path}")
+            logger.info(f"   Audio streaming at {STREAMING_SAMPLE_RATE}Hz mono for transcription")
+
+            # Start yt-dlp process (outputs to pipe)
+            yt_dlp_process = subprocess.Popen(
+                yt_dlp_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=STREAMING_BUFFER_SIZE
+            )
+
+            # Start FFmpeg process (reads from yt-dlp, outputs video to file + audio to pipe)
+            ffmpeg_process = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=yt_dlp_process.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=STREAMING_BUFFER_SIZE
+            )
+
+            # Allow yt-dlp to receive SIGPIPE if ffmpeg exits
+            yt_dlp_process.stdout.close()
+
+            # Store yt-dlp process reference for cleanup
+            ffmpeg_process._yt_dlp_process = yt_dlp_process
+
+            logger.info("✅ Stream pipeline started successfully")
+            return ffmpeg_process, ffmpeg_process.stdout, video_path
+
+        except FileNotFoundError as e:
+            missing_cmd = "yt-dlp" if "yt-dlp" in str(e) else "ffmpeg"
+            logger.error(f"❌ {missing_cmd} not found. Please install it.")
+            return None, None, None
+        except Exception as e:
+            logger.error(f"❌ Error starting stream pipeline: {e}", exc_info=True)
+            return None, None, None
+
+    def stop_stream(self, process: subprocess.Popen) -> bool:
+        """
+        Gracefully stop a streaming process and its associated yt-dlp process.
+
+        Args:
+            process: The FFmpeg subprocess.Popen object
+
+        Returns:
+            bool: True if stopped successfully
+        """
+        try:
+            # Stop yt-dlp process if attached
+            if hasattr(process, '_yt_dlp_process'):
+                yt_dlp_proc = process._yt_dlp_process
+                if yt_dlp_proc.poll() is None:
+                    yt_dlp_proc.terminate()
+                    try:
+                        yt_dlp_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        yt_dlp_proc.kill()
+                        yt_dlp_proc.wait()
+
+            # Stop FFmpeg process
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+            logger.info("✅ Stream processes stopped gracefully")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error stopping stream: {e}", exc_info=True)
+            return False
+
+    def is_stream_active(self, process: subprocess.Popen) -> bool:
+        """
+        Check if the streaming process is still active.
+
+        Args:
+            process: The FFmpeg subprocess.Popen object
+
+        Returns:
+            bool: True if stream is still active
+        """
+        return process is not None and process.poll() is None
+
+    def get_stream_errors(self, process: subprocess.Popen) -> str:
+        """
+        Get any error messages from the FFmpeg process.
+
+        Args:
+            process: The FFmpeg subprocess.Popen object
+
+        Returns:
+            str: Error messages or empty string
+        """
+        if process and process.stderr:
+            try:
+                # Non-blocking read
+                import select
+                if select.select([process.stderr], [], [], 0)[0]:
+                    return process.stderr.read().decode('utf-8', errors='replace')
+            except Exception:
+                pass
+        return ""
