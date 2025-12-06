@@ -22,6 +22,7 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          DISCORD_USER_TOKEN: ${{ secrets.DISCORD_USER_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           FLOWER_BASIC_AUTH: ${{ secrets.FLOWER_BASIC_AUTH }}
           CREDENTIALS_JSON_CONTENT: ${{ secrets.CREDENTIALS_JSON_CONTENT }}
@@ -34,6 +35,9 @@ jobs:
 
           # --- PASO 2: Crear archivos de configuración LOCALMENTE ---
           cat > .env << ENVFILE
+          # ========== DISCORD API ==========
+          DISCORD_USER_TOKEN=$DISCORD_USER_TOKEN
+
           # ========== WHISPER TRANSCRIPTION ==========
           WHISPER_DEVICE=${{ vars.WHISPER_DEVICE }}
           WHISPER_MODEL_DEFAULT=${{ vars.WHISPER_MODEL_DEFAULT }}
