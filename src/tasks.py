@@ -187,6 +187,7 @@ def process_youtube_video(
         logger.info("🔴 Starting streaming pipeline (yt-dlp → FFmpeg → Whisper)...")
         
         video_path = None
+        audio_path = None
         transcription_text = ""
         all_segments = []
         ffmpeg_process = None
@@ -250,6 +251,7 @@ def process_youtube_video(
             
             # Reset variables
             video_path = None
+            audio_path = None
             transcription_text = ""
             all_segments = []
             chunks_count = 0
@@ -264,8 +266,10 @@ def process_youtube_video(
             # Traditional download: audio
             logger.info("🎵 Downloading audio (fallback mode)...")
             audio_file = downloader.download_audio(video_info)
+            audio_path = None
             
             if audio_file and audio_file.exists():
+                audio_path = audio_file.path
                 # Traditional transcription
                 logger.info("🎤 Transcribing audio (fallback mode)...")
                 transcription_result = transcriber.transcribe(audio_file, language="en")
@@ -273,7 +277,6 @@ def process_youtube_video(
                     transcription_text = transcription_result.text
                     all_segments = transcription_result.segments or []
                     logger.info(f"✅ Transcription complete: {len(transcription_text)} chars")
-                safe_remove_file(audio_file.path)
             else:
                 logger.warning("⚠️ Could not download audio for transcription")
 
@@ -304,6 +307,24 @@ def process_youtube_video(
                 logger.error(f"❌ Error uploading video: {e}")
             finally:
                 safe_remove_file(video_path)
+
+        # Upload audio if exists (from fallback mode)
+        if audio_path and os.path.exists(audio_path):
+            logger.info(f"📤 Uploading audio: {os.path.basename(audio_path)}")
+            audio_file_obj = MediaFile(
+                path=audio_path,
+                filename=os.path.basename(audio_path),
+                file_type='audio'
+            )
+            try:
+                uploaded, drive_file = drive_manager.upload_if_not_exists(audio_file_obj, drive_folder_id)
+                if drive_file:
+                    drive_audio_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                    logger.info(f"✅ Audio uploaded: {drive_audio_url}")
+            except Exception as e:
+                logger.error(f"❌ Error uploading audio: {e}")
+            finally:
+                safe_remove_file(audio_path)
 
         # Save and upload transcription files
         if transcription_text:

@@ -88,6 +88,8 @@ _VIDEOS_DB_BASE_CONFIG = {
 # ========== DRIVE FOLDER IDS (from .env) ==========
 DRIVE_FOLDER_MARKET_OUTLOOK = os.getenv('DRIVE_FOLDER_MARKET_OUTLOOK')
 DRIVE_FOLDER_MARKET_ANALYSIS = os.getenv('DRIVE_FOLDER_MARKET_ANALYSIS')
+DRIVE_FOLDER_EDUCATION = os.getenv('DRIVE_FOLDER_EDUCATION')
+DRIVE_FOLDER_MHC_RECORDINGS = os.getenv('DRIVE_FOLDER_MHC_RECORDINGS')
 DRIVE_FOLDER_AUDIT_PROCESS = os.getenv('DRIVE_FOLDER_AUDIT_PROCESS')
 
 # ========== CHANNEL MAPPINGS ==========
@@ -101,12 +103,14 @@ CHANNEL_TO_DATABASE_MAPPING = {
         **_VIDEOS_DB_BASE_CONFIG,
         "drive_folder_id": DRIVE_FOLDER_MARKET_ANALYSIS
     },
-    
-    # Example: Add more channels pointing to same DB with different Drive folders
-    # "another-channel": {
-    #     **_VIDEOS_DB_BASE_CONFIG,
-    #     "drive_folder_id": os.getenv('DRIVE_FOLDER_ANOTHER_CHANNEL')
-    # },
+    "education": {
+        **_VIDEOS_DB_BASE_CONFIG,
+        "drive_folder_id": DRIVE_FOLDER_EDUCATION
+    },
+    "mhc-recordings": {
+        **_VIDEOS_DB_BASE_CONFIG,
+        "drive_folder_id": DRIVE_FOLDER_MHC_RECORDINGS
+    },
     
     # Audit process: updates the origin Discord Message DB entry directly
     "audit-process": {

@@ -45,7 +45,7 @@ class VideoInfo:
             upload_date=upload_date,
             safe_title=safe_title,
             video_id=info.get("id", ""),
-            channel=info.get("channel", info.get("uploader", "")),
+            channel=info.get("channel") or info.get("uploader") or info.get("channel_name") or info.get("uploader_id") or "",
             duration=info.get("duration", 0.0) or 0.0,
             availability=info.get("availability", "public") or "public"
         )
