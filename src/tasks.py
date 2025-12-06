@@ -683,9 +683,9 @@ def process_discord_video(
             raise ValueError("No video found in Discord message")
         
         # Extract metadata from Discord message
-        video_title = message_data.get('attached_files', [{}])[0].get('name', 'Discord Video')
+        video_title = message_data.get('attached_files', [{}])[0].get('filename', 'Discord Video')
         video_title = os.path.splitext(video_title)[0]  # Remove extension
-        upload_date = message_data.get('date', '')[:10]  # YYYY-MM-DD
+        upload_date = message_data.get('timestamp', '')[:10]  # YYYY-MM-DD
         safe_title = video_title  # Already safe from Discord
         
         logger.info(f"✅ Video downloaded: {video_file.filename}")
