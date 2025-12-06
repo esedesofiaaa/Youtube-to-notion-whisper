@@ -244,6 +244,8 @@ class YouTubeDownloader:
             "-f", "bv*+ba/b",  # Best video + best audio, or best combined
             "-o", "-",  # Output to stdout
             "--no-part",
+            "--live-from-start",  # For live streams: download from beginning, not current moment
+            "--wait-for-video", "30-120",  # Wait for scheduled/premiering videos (30-120 seconds retry)
             "--retries", str(YT_DLP_RETRIES),
             "--fragment-retries", str(YT_DLP_FRAGMENT_RETRIES),
             "--socket-timeout", str(YT_DLP_SOCKET_TIMEOUT),
