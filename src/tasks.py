@@ -593,6 +593,264 @@ def process_youtube_video(
         raise
 
 
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    max_retries=CELERY_TASK_MAX_RETRIES,
+    default_retry_delay=CELERY_TASK_RETRY_DELAY,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True
+)
+def process_discord_video(
+    self,
+    notion_page_id: str,
+    discord_message_url: str,
+    channel: str,
+    parent_drive_folder_id: str = None
+) -> dict:
+    """
+    Process a Discord video from message URL.
+    
+    Workflow:
+    1. Fetch message data from Discord API
+    2. Download video from Discord CDN
+    3. Transcribe using same pipeline as YouTube
+    4. Upload to Drive
+    5. Create/update Notion page
+    
+    Args:
+        notion_page_id: ID of the entry in Discord Message Database
+        discord_message_url: Discord message URL
+        channel: Discord channel (to determine destination DB)
+        parent_drive_folder_id: ID of parent folder in Drive (optional)
+    
+    Returns:
+        dict: Information about the completed task
+    
+    Raises:
+        Exception: If processing fails after all retries
+    """
+    from src.discord_downloader import DiscordDownloader
+    
+    task_id = self.request.id
+    logger.info("=" * 80)
+    logger.info(f"🚀 Starting Discord video processing [Task ID: {task_id}]")
+    logger.info(f"   Discord Message URL: {discord_message_url}")
+    logger.info(f"   Channel: {channel}")
+    logger.info(f"   Notion Page ID: {notion_page_id}")
+    logger.info("=" * 80)
+    
+    try:
+        # ============================================================
+        # 1. VALIDATE AND GET CONFIGURATION
+        # ============================================================
+        destination_db = get_destination_database(channel)
+        if not destination_db:
+            raise ValueError(f"No destination database found for channel: {channel}")
+
+        action_type = destination_db.get("action_type", "create_new_page")
+        database_id = destination_db.get("database_id")
+        database_name = destination_db["database_name"]
+        drive_folder_id_from_config = destination_db.get("drive_folder_id")
+        
+        if action_type == "create_new_page" and not database_id:
+            raise ValueError(f"database_id required for create_new_page action, channel: {channel}")
+        
+        logger.info(f"📊 Destination database: {database_name}")
+        logger.info(f"📁 Drive folder ID: {drive_folder_id_from_config}")
+
+        # ============================================================
+        # 2. INITIALIZE COMPONENTS
+        # ============================================================
+        ensure_directory_exists(TEMP_DOWNLOAD_DIR)
+        discord_downloader = DiscordDownloader(TEMP_DOWNLOAD_DIR)
+        transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
+        drive_manager = DriveManager()
+        notion_client = NotionClient()
+
+        if not drive_manager.service:
+            raise Exception("Could not authenticate with Google Drive API")
+
+        # ============================================================
+        # 3. DOWNLOAD VIDEO FROM DISCORD
+        # ============================================================
+        logger.info("📥 Downloading video from Discord...")
+        video_file, message_data = discord_downloader.download_from_message_url(discord_message_url)
+        
+        if not video_file:
+            raise ValueError("No video found in Discord message")
+        
+        # Extract metadata from Discord message
+        video_title = message_data.get('attached_files', [{}])[0].get('name', 'Discord Video')
+        video_title = os.path.splitext(video_title)[0]  # Remove extension
+        upload_date = message_data.get('date', '')[:10]  # YYYY-MM-DD
+        safe_title = video_title  # Already safe from Discord
+        
+        logger.info(f"✅ Video downloaded: {video_file.filename}")
+        logger.info(f"   Title: {video_title}")
+        logger.info(f"   Date: {upload_date}")
+
+        # ============================================================
+        # 4. CREATE DRIVE FOLDER
+        # ============================================================
+        folder_name = f"{upload_date} - {safe_title}"
+        logger.info(f"📁 Creating Drive folder: {folder_name}")
+        
+        drive_folder_id = drive_manager.create_folder(
+            folder_name,
+            parent_folder_id=parent_drive_folder_id or drive_folder_id_from_config
+        )
+        drive_folder_url = f"https://drive.google.com/drive/folders/{drive_folder_id}"
+        logger.info(f"✅ Drive folder created: {drive_folder_url}")
+
+        # ============================================================
+        # 5. TRANSCRIBE AUDIO
+        # ============================================================
+        logger.info("🎤 Starting transcription...")
+        transcription_result = transcriber.transcribe_audio_file(video_file.path)
+        
+        if not transcription_result or not transcription_result.text:
+            raise Exception("Transcription failed or returned empty text")
+        
+        transcription_text = transcription_result.text
+        logger.info(f"✅ Transcription completed: {len(transcription_text)} characters")
+
+        # Save transcription to file
+        transcription_filename = TRANSCRIPTION_FILE_FORMAT.format(
+            date=upload_date,
+            title=safe_title
+        )
+        transcription_path = os.path.join(TEMP_DOWNLOAD_DIR, transcription_filename)
+        
+        with open(transcription_path, 'w', encoding='utf-8') as f:
+            f.write(transcription_text)
+        
+        transcription_file = MediaFile(
+            path=transcription_path,
+            filename=transcription_filename,
+            file_type='transcription'
+        )
+
+        # ============================================================
+        # 6. EXTRACT AUDIO FROM VIDEO
+        # ============================================================
+        logger.info("🎵 Extracting audio from video...")
+        from src.youtube_downloader import YouTubeDownloader
+        temp_downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        audio_file = temp_downloader.extract_audio_from_video(video_file.path)
+        
+        if audio_file:
+            logger.info(f"✅ Audio extracted: {audio_file.filename}")
+        else:
+            logger.warning("⚠️ Audio extraction failed, will skip audio upload")
+
+        # ============================================================
+        # 7. UPLOAD TO DRIVE
+        # ============================================================
+        logger.info("☁️ Uploading files to Google Drive...")
+        
+        # Upload video
+        video_drive_id = drive_manager.upload_file(
+            video_file.path,
+            video_file.filename,
+            drive_folder_id
+        )
+        video_drive_url = f"https://drive.google.com/file/d/{video_drive_id}/view"
+        logger.info(f"   ✅ Video uploaded: {video_file.filename}")
+        
+        # Upload audio
+        audio_drive_url = None
+        if audio_file:
+            audio_drive_id = drive_manager.upload_file(
+                audio_file.path,
+                audio_file.filename,
+                drive_folder_id
+            )
+            audio_drive_url = f"https://drive.google.com/file/d/{audio_drive_id}/view"
+            logger.info(f"   ✅ Audio uploaded: {audio_file.filename}")
+        
+        # Upload transcription
+        transcript_drive_id = drive_manager.upload_file(
+            transcription_file.path,
+            transcription_file.filename,
+            drive_folder_id
+        )
+        logger.info(f"   ✅ Transcription uploaded: {transcription_file.filename}")
+
+        # ============================================================
+        # 8. CREATE/UPDATE NOTION PAGE
+        # ============================================================
+        logger.info("📝 Creating/updating Notion page...")
+        
+        # Prepare data for Notion (only fields that apply to Discord videos)
+        notion_data = {
+            "name": video_title,
+            "video_date_time": upload_date,
+            "drive_folder_link": drive_folder_url,
+            "video_file": video_drive_url,
+            "audio_file": audio_drive_url,
+            "transcript_text": transcription_text[:2000],  # First 2000 chars
+            "status": destination_db.get("status_value", "complete"),
+            "length_min": transcription_result.duration_minutes if hasattr(transcription_result, 'duration_minutes') else None
+        }
+        
+        # Note: Discord videos don't have YouTube-specific fields:
+        # - video_url (no YouTube URL)
+        # - video_id (no YouTube ID)  
+        # - youtube_channel (not applicable)
+        # - youtube_listing_status (not applicable)
+        
+        # Create or update based on action_type
+        if action_type == "create_new_page":
+            notion_page_url = notion_client.create_video_page(
+                database_id=database_id,
+                data=notion_data,
+                field_map=destination_db.get("field_map", {})
+            )
+            logger.info(f"✅ Notion page created: {notion_page_url}")
+        else:  # update_origin
+            notion_client.update_video_page(
+                page_id=notion_page_id,
+                data=notion_data,
+                field_map=destination_db.get("field_map", {})
+            )
+            notion_page_url = f"https://notion.so/{notion_page_id}"
+            logger.info(f"✅ Notion page updated: {notion_page_url}")
+
+        # ============================================================
+        # 9. CLEANUP
+        # ============================================================
+        logger.info("🧹 Cleaning up temporary files...")
+        safe_remove_file(video_file.path)
+        if audio_file:
+            safe_remove_file(audio_file.path)
+        safe_remove_file(transcription_file.path)
+        
+        logger.info("=" * 80)
+        logger.info("✅ Discord video processing completed successfully!")
+        logger.info(f"   Notion page: {notion_page_url}")
+        logger.info(f"   Drive folder: {drive_folder_url}")
+        logger.info("=" * 80)
+
+        return {
+            "status": "success",
+            "source": "Discord",
+            "notion_page_url": notion_page_url,
+            "drive_folder_url": drive_folder_url,
+            "drive_video_url": video_drive_url,
+            "transcription_length": len(transcription_text),
+            "database_name": database_name,
+            "video_title": video_title
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in Discord video processing: {e}", exc_info=True)
+        clean_temp_directory(TEMP_DOWNLOAD_DIR)
+        raise
+
+
 @celery_app.task(bind=True, base=CallbackTask)
 def test_task(self, message: str = "Hello from Celery!"):
     """

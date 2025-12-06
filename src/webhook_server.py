@@ -8,11 +8,12 @@ from typing import Optional
 import uvicorn
 from datetime import datetime
 
-from src.tasks import process_youtube_video, test_task
+from src.tasks import process_youtube_video, process_discord_video, test_task
 from src.notion_client import NotionClient
 from config.logger import get_logger
 from config.settings import WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_SECRET
 from config.notion_config import is_valid_youtube_url, is_valid_channel
+from src.discord_client import is_valid_discord_message_url
 
 logger = get_logger(__name__)
 
@@ -29,19 +30,21 @@ app = FastAPI(
 class WebhookPayload(BaseModel):
     """
     Data model for n8n webhook payload.
+    Supports both YouTube and Discord video URLs.
     """
-    discord_entry_id: str = Field(..., description="ID of the page in Discord Message Database")
-    youtube_url: str = Field(..., description="URL of the YouTube video")
-    channel: str = Field(..., description="Discord channel")
+    notion_page_id: str = Field(..., description="ID of the page in Discord Message Database")
+    video_url: str = Field(..., description="URL of the video (YouTube or Discord message)")
+    channel_name: str = Field(..., description="Discord channel name")
     parent_drive_folder_id: Optional[str] = Field(None, description="ID of parent folder in Drive (optional)")
 
-    @validator('youtube_url')
-    def validate_youtube_url(cls, v):
-        if not is_valid_youtube_url(v):
-            raise ValueError(f"Invalid YouTube URL: {v}")
+    @validator('video_url')
+    def validate_video_url(cls, v):
+        """Validate that URL is either YouTube or Discord message URL."""
+        if not is_valid_youtube_url(v) and not is_valid_discord_message_url(v):
+            raise ValueError(f"Invalid video URL. Must be YouTube or Discord message URL: {v}")
         return v
 
-    @validator('channel')
+    @validator('channel_name')
     def validate_channel(cls, v):
         if not is_valid_channel(v):
             raise ValueError(f"Invalid channel: {v}")
@@ -50,9 +53,9 @@ class WebhookPayload(BaseModel):
     class Config:
         schema_extra = {
             "example": {
-                "discord_entry_id": "28bdaf66daf7816383e6ce8390b0a866",
-                "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                "channel": "market-outlook",
+                "notion_page_id": "28bdaf66daf7816383e6ce8390b0a866",
+                "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "channel_name": "audit-process",
                 "parent_drive_folder_id": "1ABC123xyz"
             }
         }
@@ -133,34 +136,54 @@ async def process_video_webhook(
     verify_webhook_secret(x_webhook_secret)
 
     try:
+        # Detect video source
+        is_youtube = is_valid_youtube_url(payload.video_url)
+        is_discord = is_valid_discord_message_url(payload.video_url)
+        
+        video_source = "YouTube" if is_youtube else "Discord" if is_discord else "Unknown"
+        
         logger.info("=" * 80)
         logger.info("📨 Webhook received")
-        logger.info(f"   Discord Entry ID: {payload.discord_entry_id}")
-        logger.info(f"   YouTube URL: {payload.youtube_url}")
-        logger.info(f"   Channel: {payload.channel}")
+        logger.info(f"   Source: {video_source}")
+        logger.info(f"   Notion Page ID: {payload.notion_page_id}")
+        logger.info(f"   Video URL: {payload.video_url}")
+        logger.info(f"   Channel: {payload.channel_name}")
         logger.info("=" * 80)
 
-        # Queue task in Celery
-        task = process_youtube_video.apply_async(
-            kwargs={
-                "discord_entry_id": payload.discord_entry_id,
-                "youtube_url": payload.youtube_url,
-                "channel": payload.channel,
-                "parent_drive_folder_id": payload.parent_drive_folder_id
-            }
-        )
+        # Route to appropriate task based on URL type
+        if is_youtube:
+            task = process_youtube_video.apply_async(
+                kwargs={
+                    "discord_entry_id": payload.notion_page_id,
+                    "youtube_url": payload.video_url,
+                    "channel": payload.channel_name,
+                    "parent_drive_folder_id": payload.parent_drive_folder_id
+                }
+            )
+        elif is_discord:
+            task = process_discord_video.apply_async(
+                kwargs={
+                    "notion_page_id": payload.notion_page_id,
+                    "discord_message_url": payload.video_url,
+                    "channel": payload.channel_name,
+                    "parent_drive_folder_id": payload.parent_drive_folder_id
+                }
+            )
+        else:
+            raise ValueError(f"Unsupported video URL type: {payload.video_url}")
 
-        logger.info(f"✅ Task queued successfully [Task ID: {task.id}]")
+        logger.info(f"✅ Task queued successfully [Task ID: {task.id}] [Source: {video_source}]")
 
         return TaskResponse(
             status="queued",
-            message="Video queued for processing",
+            message=f"{video_source} video queued for processing",
             task_id=task.id,
             timestamp=datetime.utcnow().isoformat(),
             data={
-                "youtube_url": payload.youtube_url,
-                "channel": payload.channel,
-                "discord_entry_id": payload.discord_entry_id
+                "video_url": payload.video_url,
+                "source": video_source,
+                "channel": payload.channel_name,
+                "notion_page_id": payload.notion_page_id
             }
         )
 
