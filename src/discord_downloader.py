@@ -73,13 +73,13 @@ class DiscordDownloader:
             return None, message_data
         
         # Download video
-        logger.info(f"📥 Downloading video: {video_attachment['name']}")
+        logger.info(f"📥 Downloading video: {video_attachment['filename']}")
         logger.info(f"   Size: {video_attachment['size'] / 1024 / 1024:.2f} MB")
         logger.info(f"   URL: {video_attachment['url'][:80]}...")
         
         video_file = self._download_file(
             video_attachment['url'],
-            video_attachment['name']
+            video_attachment['filename']
         )
         
         logger.info(f"✅ Video downloaded successfully")
@@ -104,18 +104,16 @@ class DiscordDownloader:
         video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'}
         
         for file in attached_files:
-            # Skip images
-            if file.get('is_image'):
-                continue
+            filename = file.get('filename', '')
             
-            # Check extension
-            extension = file.get('extension', '').lower()
+            # Check if it's a video by extension
+            extension = os.path.splitext(filename)[1].lower()
             if extension in video_extensions:
-                logger.debug(f"   Found video: {file['name']} ({extension})")
+                logger.debug(f"   Found video: {filename} ({extension})")
                 return file
         
         # No video found
-        logger.warning(f"   No video found. Attachments: {[f['name'] for f in attached_files]}")
+        logger.warning(f"   No video found. Attachments: {[f.get('filename', 'unknown') for f in attached_files]}")
         return None
     
     def _download_file(self, cdn_url: str, filename: str) -> MediaFile:
