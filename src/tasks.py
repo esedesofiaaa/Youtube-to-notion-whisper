@@ -764,31 +764,19 @@ def process_discord_video(
         logger.info("☁️ Uploading files to Google Drive...")
         
         # Upload video
-        video_drive_id = drive_manager.upload_file(
-            video_file.path,
-            video_file.filename,
-            drive_folder_id
-        )
-        video_drive_url = f"https://drive.google.com/file/d/{video_drive_id}/view"
+        uploaded, video_drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
+        video_drive_url = f"https://drive.google.com/file/d/{video_drive_file.id}/view" if video_drive_file else None
         logger.info(f"   ✅ Video uploaded: {video_file.filename}")
         
         # Upload audio
         audio_drive_url = None
         if audio_file:
-            audio_drive_id = drive_manager.upload_file(
-                audio_file.path,
-                audio_file.filename,
-                drive_folder_id
-            )
-            audio_drive_url = f"https://drive.google.com/file/d/{audio_drive_id}/view"
+            uploaded, audio_drive_file = drive_manager.upload_if_not_exists(audio_file, drive_folder_id)
+            audio_drive_url = f"https://drive.google.com/file/d/{audio_drive_file.id}/view" if audio_drive_file else None
             logger.info(f"   ✅ Audio uploaded: {audio_file.filename}")
         
         # Upload transcription
-        transcript_drive_id = drive_manager.upload_file(
-            transcription_file.path,
-            transcription_file.filename,
-            drive_folder_id
-        )
+        uploaded, transcript_drive_file = drive_manager.upload_if_not_exists(transcription_file, drive_folder_id)
         logger.info(f"   ✅ Transcription uploaded: {transcription_file.filename}")
 
         # ============================================================
