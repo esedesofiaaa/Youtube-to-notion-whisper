@@ -80,7 +80,6 @@ _VIDEOS_DB_BASE_CONFIG = {
         "status": "Transcript Process Status",    # select
         # "youtube_listing_status": "YoutubeListingStatus",  # DISABLED: property doesn't exist in Videos DB
         "length_min": "Lenght min",               # number (typo in Notion)
-        "process_errors": "ProcessErrors"         # text
     },
     "status_value": "complete"
 }
