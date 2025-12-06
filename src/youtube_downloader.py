@@ -455,6 +455,10 @@ class YouTubeDownloader:
         Returns:
             MediaFile object with audio file or None if extraction fails
         """
+        logger.info(f"🎵 extract_audio_from_video called")
+        logger.info(f"   Input path: {video_path}")
+        logger.info(f"   File exists: {os.path.exists(video_path)}")
+        
         if not os.path.exists(video_path):
             logger.error(f"❌ Video file not found: {video_path}")
             return None
@@ -462,6 +466,8 @@ class YouTubeDownloader:
         # Generate MP3 filename (replace extension)
         base_path = os.path.splitext(video_path)[0]
         mp3_path = f"{base_path}.mp3"
+        
+        logger.info(f"   Output path: {mp3_path}")
         
         try:
             logger.info(f"🎵 Extracting audio from: {os.path.basename(video_path)}")
@@ -478,12 +484,17 @@ class YouTubeDownloader:
                 mp3_path
             ]
             
+            logger.info(f"   Running FFmpeg command: {' '.join(cmd)}")
+            
             result = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=300  # 5 minutes timeout
             )
+            
+            logger.info(f"   FFmpeg return code: {result.returncode}")
+            logger.info(f"   Output file exists: {os.path.exists(mp3_path)}")
             
             if result.returncode == 0 and os.path.exists(mp3_path):
                 logger.info(f"✅ Audio extracted: {os.path.basename(mp3_path)}")
@@ -494,7 +505,9 @@ class YouTubeDownloader:
                 )
             else:
                 error_msg = result.stderr.decode('utf-8', errors='replace')
-                logger.error(f"❌ FFmpeg audio extraction failed: {error_msg}")
+                logger.error(f"❌ FFmpeg audio extraction failed")
+                logger.error(f"   Return code: {result.returncode}")
+                logger.error(f"   STDERR: {error_msg[-500:]}")  # Last 500 chars
                 return None
                 
         except subprocess.TimeoutExpired:
@@ -502,6 +515,7 @@ class YouTubeDownloader:
             return None
         except FileNotFoundError:
             logger.error("❌ FFmpeg not found. Please install FFmpeg.")
+            logger.error("   Install with: sudo apt-get install ffmpeg")
             return None
         except Exception as e:
             logger.error(f"❌ Error extracting audio: {e}", exc_info=True)

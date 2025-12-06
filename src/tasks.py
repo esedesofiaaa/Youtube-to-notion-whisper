@@ -709,14 +709,26 @@ def process_discord_video(
         # 5. EXTRACT AUDIO FROM VIDEO
         # ============================================================
         logger.info("🎵 Extracting audio from video...")
+        logger.info(f"   Video path: {video_file.path}")
+        logger.info(f"   Video exists: {os.path.exists(video_file.path)}")
+        
         from src.youtube_downloader import YouTubeDownloader
         temp_downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
-        audio_file = temp_downloader.extract_audio_from_video(video_file.path)
         
-        if not audio_file:
-            raise Exception("Audio extraction failed")
-        
-        logger.info(f"✅ Audio extracted: {audio_file.filename}")
+        try:
+            audio_file = temp_downloader.extract_audio_from_video(video_file.path)
+            
+            if not audio_file:
+                logger.error("❌ Audio extraction returned None")
+                logger.error(f"   Check if FFmpeg is installed on the server")
+                logger.error(f"   Video file: {video_file.path}")
+                raise Exception("Audio extraction failed - check server logs for FFmpeg errors")
+            
+            logger.info(f"✅ Audio extracted: {audio_file.filename}")
+            
+        except Exception as e:
+            logger.error(f"❌ Exception during audio extraction: {e}", exc_info=True)
+            raise
 
         # ============================================================
         # 6. TRANSCRIBE AUDIO
