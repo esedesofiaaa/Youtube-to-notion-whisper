@@ -14,14 +14,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Connect to Tailscale
-        # Usa el SHA que ya arreglamos
         uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
       - name: Deploy to homeserver
-        # 1. AQUÍ DECLARAMOS LOS SECRETOS COMO VARIABLES DE ENTORNO
-        # Esto elimina los errores de SonarQube
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
@@ -30,15 +27,12 @@ jobs:
           CREDENTIALS_JSON_CONTENT: ${{ secrets.CREDENTIALS_JSON_CONTENT }}
 
         run: |
-          # --- PASO 1: Configurar SSH (Usando variables de entorno) ---
+          # --- PASO 1: Configurar SSH ---
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
           # --- PASO 2: Crear archivos de configuración LOCALMENTE ---
-          # Al crearlos aquí usando variables de entorno ($VAR), SonarQube es feliz.
-          # Nota: Las 'vars' normales las dejamos igual  vars...  porque no son secretos.
-
           cat > .env << ENVFILE
           # ========== WHISPER TRANSCRIPTION ==========
           WHISPER_DEVICE=${{ vars.WHISPER_DEVICE }}
@@ -95,39 +89,113 @@ jobs:
           CELERY_TASK_SOFT_TIME_LIMIT=${{ vars.CELERY_TASK_SOFT_TIME_LIMIT }}
           CELERY_WORKER_CONCURRENCY=${{ vars.CELERY_WORKER_CONCURRENCY }}
 
-          # ========== WEBHOOK SERVER (OTRO CAMBIO) ==========
+          # ========== WEBHOOK SERVER ==========
           WEBHOOK_HOST=${{ vars.WEBHOOK_HOST }}
           WEBHOOK_PORT=${{ vars.WEBHOOK_PORT }}
           WEBHOOK_SECRET=$WEBHOOK_SECRET
 
-          # ========== FLOWER DASHBOARD (OTRO CAMBIO) ==========
+          # ========== FLOWER DASHBOARD ==========
           FLOWER_PORT=${{ vars.FLOWER_PORT }}
           FLOWER_BASIC_AUTH=$FLOWER_BASIC_AUTH
           ENVFILE
 
-          # Crear credentials.json usando la variable de entorno
+          # Crear credentials.json
           echo "$CREDENTIALS_JSON_CONTENT" > credentials.json
 
-          # --- PASO 3: Enviar los archivos al servidor ---
+          # --- PASO 3: Enviar archivos al servidor ---
           scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key .env credentials.json deploy@100.83.246.78:/home/deploy/Youtube-to-notion-whisper/
 
-          # --- PASO 4: Conectarse y reiniciar servicios ---
+          # --- PASO 4: Deploy con verificaciones mejoradas ---
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key deploy@100.83.246.78 "bash -s" << 'EOF'
+            set -e  # Exit on any error
+            
             cd /home/deploy/Youtube-to-notion-whisper
             
-            # Git pull
+            echo "========================================="
+            echo "🚀 Starting deployment..."
+            echo "========================================="
+            
+            echo ""
+            echo "📦 Pulling latest code..."
             git pull
             
-            # Instalar dependencias
+            echo ""
+            echo "📚 Installing dependencies..."
             source venv/bin/activate
-            pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org
+            pip install -r requirements.txt --index-url https://pypi.org/simple --trusted-host pypi.org --quiet
             
-            # Reiniciar servicio
-            sudo systemctl restart youtube-whisper
+            echo ""
+            echo "🔄 Stopping service gracefully..."
+            sudo systemctl stop youtube-whisper || true
             
-            # Verificar salud
-            sleep 15
-            curl -f http://127.0.0.1:8000/health || exit 1
+            echo "⏳ Waiting for service to stop completely..."
+            sleep 5
+            
+            echo ""
+            echo "🚀 Starting service..."
+            sudo systemctl start youtube-whisper
+            
+            echo "⏳ Waiting for services to initialize (30 seconds)..."
+            for i in {30..1}; do
+              echo -n "$i... "
+              sleep 1
+            done
+            echo ""
+            
+            echo ""
+            echo "========================================="
+            echo "✅ Verifying deployment..."
+            echo "========================================="
+            
+            echo ""
+            echo "📊 Service status:"
+            if sudo systemctl is-active --quiet youtube-whisper; then
+              echo "✅ Service is running"
+              sudo systemctl status youtube-whisper --no-pager -l | head -20
+            else
+              echo "❌ Service failed to start!"
+              echo ""
+              echo "Last 50 log lines:"
+              sudo journalctl -u youtube-whisper -n 50 --no-pager
+              exit 1
+            fi
+            
+            echo ""
+            echo "🏥 Health check (5 attempts, 10s between each):"
+            max_attempts=5
+            attempt=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              echo -n "  Attempt $attempt/$max_attempts... "
+              
+              if curl -f -s http://127.0.0.1:8000/health > /dev/null 2>&1; then
+                echo "✅ PASSED"
+                echo ""
+                echo "========================================="
+                echo "🎉 Deployment successful!"
+                echo "========================================="
+                exit 0
+              else
+                echo "❌ FAILED"
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "     Waiting 10 seconds before retry..."
+                  sleep 10
+                fi
+                attempt=$((attempt + 1))
+              fi
+            done
+            
+            echo ""
+            echo "❌ Health check failed after $max_attempts attempts"
+            echo ""
+            echo "Debugging information:"
+            echo "----------------------"
+            echo "Docker containers:"
+            docker ps | grep redis || echo "No Redis container found"
+            echo ""
+            echo "Service logs (last 100 lines):"
+            sudo journalctl -u youtube-whisper -n 100 --no-pager
+            exit 1
           EOF
 
       - name: Deploy summary
