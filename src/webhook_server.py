@@ -31,24 +31,53 @@ class WebhookPayload(BaseModel):
     """
     Data model for n8n webhook payload.
     Supports both YouTube and Discord video URLs.
+    Maintains backward compatibility with old field names.
     """
-    notion_page_id: str = Field(..., description="ID of the page in Discord Message Database")
-    video_url: str = Field(..., description="URL of the video (YouTube or Discord message)")
-    channel_name: str = Field(..., description="Discord channel name")
+    # New field names (preferred)
+    notion_page_id: Optional[str] = Field(None, description="ID of the page in Discord Message Database")
+    video_url: Optional[str] = Field(None, description="URL of the video (YouTube or Discord message)")
+    channel_name: Optional[str] = Field(None, description="Discord channel name")
+    
+    # Old field names (backward compatibility)
+    discord_entry_id: Optional[str] = Field(None, description="[DEPRECATED] Use notion_page_id instead")
+    youtube_url: Optional[str] = Field(None, description="[DEPRECATED] Use video_url instead")
+    channel: Optional[str] = Field(None, description="[DEPRECATED] Use channel_name instead")
+    
     parent_drive_folder_id: Optional[str] = Field(None, description="ID of parent folder in Drive (optional)")
 
-    @validator('video_url')
-    def validate_video_url(cls, v):
+    @validator('video_url', 'youtube_url', pre=True, always=True)
+    def validate_video_url(cls, v, values):
         """Validate that URL is either YouTube or Discord message URL."""
-        if not is_valid_youtube_url(v) and not is_valid_discord_message_url(v):
-            raise ValueError(f"Invalid video URL. Must be YouTube or Discord message URL: {v}")
-        return v
+        # Use video_url if provided, otherwise fall back to youtube_url
+        url = v or values.get('youtube_url') or values.get('video_url')
+        if not url:
+            return None
+        if not is_valid_youtube_url(url) and not is_valid_discord_message_url(url):
+            raise ValueError(f"Invalid video URL. Must be YouTube or Discord message URL: {url}")
+        return url
 
-    @validator('channel_name')
-    def validate_channel(cls, v):
-        if not is_valid_channel(v):
-            raise ValueError(f"Invalid channel: {v}")
-        return v
+    @validator('channel_name', 'channel', pre=True, always=True)
+    def validate_channel(cls, v, values):
+        """Validate channel name."""
+        # Use channel_name if provided, otherwise fall back to channel
+        channel = v or values.get('channel') or values.get('channel_name')
+        if not channel:
+            return None
+        if not is_valid_channel(channel):
+            raise ValueError(f"Invalid channel: {channel}")
+        return channel
+    
+    def get_notion_page_id(self) -> str:
+        """Get notion_page_id with fallback to discord_entry_id."""
+        return self.notion_page_id or self.discord_entry_id
+    
+    def get_video_url(self) -> str:
+        """Get video_url with fallback to youtube_url."""
+        return self.video_url or self.youtube_url
+    
+    def get_channel_name(self) -> str:
+        """Get channel_name with fallback to channel."""
+        return self.channel_name or self.channel
 
     class Config:
         schema_extra = {
@@ -136,41 +165,54 @@ async def process_video_webhook(
     verify_webhook_secret(x_webhook_secret)
 
     try:
+        # Get values with backward compatibility
+        notion_page_id = payload.get_notion_page_id()
+        video_url = payload.get_video_url()
+        channel_name = payload.get_channel_name()
+        
+        # Validate required fields
+        if not notion_page_id:
+            raise ValueError("notion_page_id (or discord_entry_id) is required")
+        if not video_url:
+            raise ValueError("video_url (or youtube_url) is required")
+        if not channel_name:
+            raise ValueError("channel_name (or channel) is required")
+        
         # Detect video source
-        is_youtube = is_valid_youtube_url(payload.video_url)
-        is_discord = is_valid_discord_message_url(payload.video_url)
+        is_youtube = is_valid_youtube_url(video_url)
+        is_discord = is_valid_discord_message_url(video_url)
         
         video_source = "YouTube" if is_youtube else "Discord" if is_discord else "Unknown"
         
         logger.info("=" * 80)
         logger.info("📨 Webhook received")
         logger.info(f"   Source: {video_source}")
-        logger.info(f"   Notion Page ID: {payload.notion_page_id}")
-        logger.info(f"   Video URL: {payload.video_url}")
-        logger.info(f"   Channel: {payload.channel_name}")
+        logger.info(f"   Notion Page ID: {notion_page_id}")
+        logger.info(f"   Video URL: {video_url}")
+        logger.info(f"   Channel: {channel_name}")
         logger.info("=" * 80)
 
         # Route to appropriate task based on URL type
         if is_youtube:
             task = process_youtube_video.apply_async(
                 kwargs={
-                    "discord_entry_id": payload.notion_page_id,
-                    "youtube_url": payload.video_url,
-                    "channel": payload.channel_name,
+                    "discord_entry_id": notion_page_id,
+                    "youtube_url": video_url,
+                    "channel": channel_name,
                     "parent_drive_folder_id": payload.parent_drive_folder_id
                 }
             )
         elif is_discord:
             task = process_discord_video.apply_async(
                 kwargs={
-                    "notion_page_id": payload.notion_page_id,
-                    "discord_message_url": payload.video_url,
-                    "channel": payload.channel_name,
+                    "notion_page_id": notion_page_id,
+                    "discord_message_url": video_url,
+                    "channel": channel_name,
                     "parent_drive_folder_id": payload.parent_drive_folder_id
                 }
             )
         else:
-            raise ValueError(f"Unsupported video URL type: {payload.video_url}")
+            raise ValueError(f"Unsupported video URL type: {video_url}")
 
         logger.info(f"✅ Task queued successfully [Task ID: {task.id}] [Source: {video_source}]")
 
@@ -180,10 +222,10 @@ async def process_video_webhook(
             task_id=task.id,
             timestamp=datetime.utcnow().isoformat(),
             data={
-                "video_url": payload.video_url,
+                "video_url": video_url,
                 "source": video_source,
-                "channel": payload.channel_name,
-                "notion_page_id": payload.notion_page_id
+                "channel": channel_name,
+                "notion_page_id": notion_page_id
             }
         )
 
