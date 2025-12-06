@@ -33,6 +33,30 @@ sudo journalctl -u youtube-whisper --since today
 sudo journalctl -u youtube-whisper --since "2025-12-03 20:00" --until "2025-12-03 22:00"
 
 # Logs de la Aplicación
+
+# Webhook
+
+# Logs más recientes
+sudo journalctl -u webhook -n 50 --no-pager
+
+# Seguir logs en tiempo real
+sudo journalctl -u webhook -f
+
+# Logs desde hoy
+sudo journalctl -u webhook --since today
+
+# Log más reciente
+tail -f /home/deploy/Youtube-to-notion-whisper/logs/src_webhook_server_*.log
+
+# Log específico (por ejemplo, del 6 de diciembre)
+tail -f /home/deploy/Youtube-to-notion-whisper/logs/src_webhook_server_20251206.log
+
+# Últimas 100 líneas
+tail -n 100 /home/deploy/Youtube-to-notion-whisper/logs/src_webhook_server_20251206.log
+
+# Ver todos los logs del webhook
+cat /home/deploy/Youtube-to-notion-whisper/logs/src_webhook_server_*.log | grep -i webhook
+
 # Celery worker
 tail -f /home/deploy/Youtube-to-notion-whisper/logs/celery_worker.log
 
