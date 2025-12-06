@@ -26,7 +26,7 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.5.0
 
 # Discord selfbot (for user accounts)
-discord.py-self>=2.1.0
+discord.py-self==2.0.1
 
 # Environment Variables
 python-dotenv>=1.0.0
