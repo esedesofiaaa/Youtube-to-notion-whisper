@@ -390,3 +390,119 @@ class YouTubeDownloader:
             except Exception:
                 pass
         return ""
+
+    def convert_mkv_to_mp4(self, mkv_path: str) -> Optional[str]:
+        """
+        Convert MKV file to MP4 format using FFmpeg.
+
+        Args:
+            mkv_path: Path to the MKV file
+
+        Returns:
+            Path to the MP4 file or None if conversion fails
+        """
+        if not os.path.exists(mkv_path):
+            logger.error(f"❌ MKV file not found: {mkv_path}")
+            return None
+
+        mp4_path = mkv_path.replace('.mkv', '.mp4')
+        
+        try:
+            logger.info(f"🔄 Converting MKV to MP4: {os.path.basename(mkv_path)}")
+            
+            # FFmpeg command to convert MKV to MP4 (fast copy, no re-encoding)
+            cmd = [
+                'ffmpeg',
+                '-i', mkv_path,
+                '-c', 'copy',  # Copy codecs (no re-encoding)
+                '-movflags', '+faststart',  # Optimize for streaming
+                '-y',  # Overwrite output file if exists
+                mp4_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if result.returncode == 0 and os.path.exists(mp4_path):
+                logger.info(f"✅ MP4 conversion successful: {os.path.basename(mp4_path)}")
+                return mp4_path
+            else:
+                error_msg = result.stderr.decode('utf-8', errors='replace')
+                logger.error(f"❌ FFmpeg conversion failed: {error_msg}")
+                return None
+                
+        except subprocess.TimeoutExpired:
+            logger.error("❌ FFmpeg conversion timed out")
+            return None
+        except FileNotFoundError:
+            logger.error("❌ FFmpeg not found. Please install FFmpeg.")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error converting MKV to MP4: {e}", exc_info=True)
+            return None
+
+    def extract_audio_from_video(self, video_path: str) -> Optional[MediaFile]:
+        """
+        Extract audio from video file as MP3.
+
+        Args:
+            video_path: Path to the video file (MP4, MKV, etc.)
+
+        Returns:
+            MediaFile object with audio file or None if extraction fails
+        """
+        if not os.path.exists(video_path):
+            logger.error(f"❌ Video file not found: {video_path}")
+            return None
+
+        # Generate MP3 filename (replace extension)
+        base_path = os.path.splitext(video_path)[0]
+        mp3_path = f"{base_path}.mp3"
+        
+        try:
+            logger.info(f"🎵 Extracting audio from: {os.path.basename(video_path)}")
+            
+            # FFmpeg command to extract audio as MP3
+            cmd = [
+                'ffmpeg',
+                '-i', video_path,
+                '-vn',  # No video
+                '-acodec', 'libmp3lame',  # MP3 codec
+                '-ab', YT_DLP_AUDIO_QUALITY,  # Audio bitrate
+                '-ar', '44100',  # Sample rate
+                '-y',  # Overwrite output file if exists
+                mp3_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if result.returncode == 0 and os.path.exists(mp3_path):
+                logger.info(f"✅ Audio extracted: {os.path.basename(mp3_path)}")
+                return MediaFile(
+                    path=mp3_path,
+                    filename=os.path.basename(mp3_path),
+                    file_type='audio'
+                )
+            else:
+                error_msg = result.stderr.decode('utf-8', errors='replace')
+                logger.error(f"❌ FFmpeg audio extraction failed: {error_msg}")
+                return None
+                
+        except subprocess.TimeoutExpired:
+            logger.error("❌ FFmpeg audio extraction timed out")
+            return None
+        except FileNotFoundError:
+            logger.error("❌ FFmpeg not found. Please install FFmpeg.")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error extracting audio: {e}", exc_info=True)
+            return None

@@ -290,12 +290,39 @@ def process_youtube_video(
         drive_transcript_txt_url = None
         drive_transcript_srt_url = None
 
-        # Upload video if exists
+        # Process video file (convert MKV to MP4 if needed, extract audio)
+        final_video_path = video_path
+        extracted_audio_path = None
+        
         if video_path and os.path.exists(video_path):
-            logger.info(f"📤 Uploading video: {os.path.basename(video_path)}")
+            # If video is MKV (from streaming), convert to MP4
+            if video_path.endswith('.mkv'):
+                logger.info("🔄 Converting MKV to MP4 for better compatibility...")
+                mp4_path = downloader.convert_mkv_to_mp4(video_path)
+                if mp4_path and os.path.exists(mp4_path):
+                    final_video_path = mp4_path
+                    safe_remove_file(video_path)  # Remove MKV after successful conversion
+                    logger.info(f"✅ Using MP4: {os.path.basename(mp4_path)}")
+                else:
+                    logger.warning("⚠️ MP4 conversion failed, using MKV")
+                    final_video_path = video_path
+            
+            # Extract audio from video if we don't have audio yet (streaming mode)
+            if not audio_path or not os.path.exists(audio_path):
+                logger.info("🎵 Extracting audio from video for Drive upload...")
+                audio_file_extracted = downloader.extract_audio_from_video(final_video_path)
+                if audio_file_extracted and audio_file_extracted.exists():
+                    extracted_audio_path = audio_file_extracted.path
+                    logger.info(f"✅ Audio extracted: {audio_file_extracted.filename}")
+                else:
+                    logger.warning("⚠️ Audio extraction failed")
+
+        # Upload video if exists
+        if final_video_path and os.path.exists(final_video_path):
+            logger.info(f"📤 Uploading video: {os.path.basename(final_video_path)}")
             video_file = MediaFile(
-                path=video_path,
-                filename=os.path.basename(video_path),
+                path=final_video_path,
+                filename=os.path.basename(final_video_path),
                 file_type='video'
             )
             try:
@@ -306,14 +333,16 @@ def process_youtube_video(
             except Exception as e:
                 logger.error(f"❌ Error uploading video: {e}")
             finally:
-                safe_remove_file(video_path)
+                safe_remove_file(final_video_path)
 
-        # Upload audio if exists (from fallback mode)
-        if audio_path and os.path.exists(audio_path):
-            logger.info(f"📤 Uploading audio: {os.path.basename(audio_path)}")
+        # Upload audio - either from fallback mode or extracted from video
+        audio_to_upload = audio_path if (audio_path and os.path.exists(audio_path)) else extracted_audio_path
+        
+        if audio_to_upload and os.path.exists(audio_to_upload):
+            logger.info(f"📤 Uploading audio: {os.path.basename(audio_to_upload)}")
             audio_file_obj = MediaFile(
-                path=audio_path,
-                filename=os.path.basename(audio_path),
+                path=audio_to_upload,
+                filename=os.path.basename(audio_to_upload),
                 file_type='audio'
             )
             try:
@@ -324,7 +353,7 @@ def process_youtube_video(
             except Exception as e:
                 logger.error(f"❌ Error uploading audio: {e}")
             finally:
-                safe_remove_file(audio_path)
+                safe_remove_file(audio_to_upload)
 
         # Save and upload transcription files
         if transcription_text:
