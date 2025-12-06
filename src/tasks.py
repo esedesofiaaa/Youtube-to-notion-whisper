@@ -706,10 +706,23 @@ def process_discord_video(
         logger.info(f"✅ Drive folder created: {drive_folder_url}")
 
         # ============================================================
-        # 5. TRANSCRIBE AUDIO
+        # 5. EXTRACT AUDIO FROM VIDEO
+        # ============================================================
+        logger.info("🎵 Extracting audio from video...")
+        from src.youtube_downloader import YouTubeDownloader
+        temp_downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        audio_file = temp_downloader.extract_audio_from_video(video_file.path)
+        
+        if not audio_file:
+            raise Exception("Audio extraction failed")
+        
+        logger.info(f"✅ Audio extracted: {audio_file.filename}")
+
+        # ============================================================
+        # 6. TRANSCRIBE AUDIO
         # ============================================================
         logger.info("🎤 Starting transcription...")
-        transcription_result = transcriber.transcribe_audio_file(video_file.path)
+        transcription_result = transcriber.transcribe(audio_file, language="en")
         
         if not transcription_result or not transcription_result.text:
             raise Exception("Transcription failed or returned empty text")
@@ -732,19 +745,6 @@ def process_discord_video(
             filename=transcription_filename,
             file_type='transcription'
         )
-
-        # ============================================================
-        # 6. EXTRACT AUDIO FROM VIDEO
-        # ============================================================
-        logger.info("🎵 Extracting audio from video...")
-        from src.youtube_downloader import YouTubeDownloader
-        temp_downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
-        audio_file = temp_downloader.extract_audio_from_video(video_file.path)
-        
-        if audio_file:
-            logger.info(f"✅ Audio extracted: {audio_file.filename}")
-        else:
-            logger.warning("⚠️ Audio extraction failed, will skip audio upload")
 
         # ============================================================
         # 7. UPLOAD TO DRIVE
