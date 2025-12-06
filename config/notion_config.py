@@ -123,7 +123,7 @@ CHANNEL_TO_DATABASE_MAPPING = {
             
             # YouTube info
             "video_url": "URL",                       # url - YouTube URL
-            "live_video_url": "Live Video URL",       # url - same as video_url
+            # "live_video_url": "Live Video URL",     # DISABLED: property doesn't exist in DB
             "video_id": "Video ID",                   # text - YouTube video ID
             "youtube_channel": "YouTube Channel",     # select
             

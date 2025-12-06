@@ -465,7 +465,9 @@ def process_youtube_video(
                     update_props[column_name] = notion_client.build_date_property(value)
                 elif logical_key == "length_min":
                     update_props[column_name] = notion_client.build_number_property(value)
-                elif logical_key in ("video_id", "transcript_text", "process_errors", "name"):
+                elif logical_key == "name":
+                    update_props[column_name] = notion_client.build_title_property(str(value))
+                elif logical_key in ("video_id", "transcript_text", "process_errors"):
                     update_props[column_name] = notion_client.build_text_property(str(value))
 
                 logger.info(f"   📌 {column_name}: {str(value)[:50]}...")
