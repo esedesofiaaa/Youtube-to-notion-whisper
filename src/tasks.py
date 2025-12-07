@@ -740,23 +740,38 @@ def process_discord_video(
             raise Exception("Transcription failed or returned empty text")
         
         transcription_text = transcription_result.text
+        all_segments = transcription_result.segments or []
         logger.info(f"✅ Transcription completed: {len(transcription_text)} characters")
 
-        # Save transcription to file
-        transcription_filename = TRANSCRIPTION_FILE_FORMAT.format(
+        # Save transcription files (TXT and SRT)
+        txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
             date=upload_date,
             title=safe_title
         )
-        transcription_path = os.path.join(TEMP_DOWNLOAD_DIR, transcription_filename)
+        txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
+        srt_path = txt_path.replace('.txt', '.srt')
         
-        with open(transcription_path, 'w', encoding='utf-8') as f:
-            f.write(transcription_text)
+        # Save TXT file
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(transcription_text.strip())
+        logger.info(f"✅ TXT file saved: {txt_filename}")
         
-        transcription_file = MediaFile(
-            path=transcription_path,
-            filename=transcription_filename,
-            file_type='transcription'
-        )
+        # Save SRT file if we have segments with timestamps
+        if all_segments:
+            try:
+                from src.models import StreamingTranscriptionResult
+                temp_result = StreamingTranscriptionResult(
+                    text=transcription_text,
+                    language="en",
+                    language_probability=1.0,
+                    segments=all_segments,
+                    chunks_processed=1,
+                    stream_completed=True
+                )
+                temp_result.save_srt(srt_path)
+                logger.info(f"✅ SRT file generated: {os.path.basename(srt_path)}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not generate SRT file: {e}")
 
         # ============================================================
         # 7. UPLOAD TO DRIVE
@@ -775,9 +790,41 @@ def process_discord_video(
             audio_drive_url = f"https://drive.google.com/file/d/{audio_drive_file.id}/view" if audio_drive_file else None
             logger.info(f"   ✅ Audio uploaded: {audio_file.filename}")
         
-        # Upload transcription
-        uploaded, transcript_drive_file = drive_manager.upload_if_not_exists(transcription_file, drive_folder_id)
-        logger.info(f"   ✅ Transcription uploaded: {transcription_file.filename}")
+        # Upload TXT transcript
+        drive_transcript_txt_url = None
+        if os.path.exists(txt_path):
+            txt_file = MediaFile(
+                path=txt_path,
+                filename=os.path.basename(txt_path),
+                file_type='transcription'
+            )
+            try:
+                uploaded, drive_file = drive_manager.upload_if_not_exists(txt_file, drive_folder_id)
+                if drive_file:
+                    drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                    logger.info(f"   ✅ Transcript TXT uploaded")
+            except Exception as e:
+                logger.error(f"❌ Error uploading TXT: {e}")
+            finally:
+                safe_remove_file(txt_path)
+        
+        # Upload SRT transcript
+        drive_transcript_srt_url = None
+        if os.path.exists(srt_path):
+            srt_file = MediaFile(
+                path=srt_path,
+                filename=os.path.basename(srt_path),
+                file_type='transcription'
+            )
+            try:
+                uploaded, drive_file = drive_manager.upload_if_not_exists(srt_file, drive_folder_id)
+                if drive_file:
+                    drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                    logger.info(f"   ✅ Transcript SRT uploaded")
+            except Exception as e:
+                logger.error(f"❌ Error uploading SRT: {e}")
+            finally:
+                safe_remove_file(srt_path)
 
         # ============================================================
         # 8. CREATE/UPDATE NOTION PAGE
@@ -791,7 +838,9 @@ def process_discord_video(
             "drive_folder_link": drive_folder_url,
             "video_file": video_drive_url,
             "audio_file": audio_drive_url,
-            "transcript_text": transcription_text[:2000],  # First 2000 chars
+            "transcript_file": drive_transcript_txt_url,
+            "transcript_srt_file": drive_transcript_srt_url,
+            "transcript_text": transcription_text[:2000] if transcription_text else None,
             "status": destination_db.get("status_value", "complete"),
             "length_min": transcription_result.duration_minutes if hasattr(transcription_result, 'duration_minutes') else None
         }
@@ -824,6 +873,9 @@ def process_discord_video(
                 # Map by property type based on logical key
                 if logical_key in ("drive_folder_link", "video_file", "audio_file"):
                     update_props[column_name] = notion_client.build_url_property(value)
+                elif logical_key in ("transcript_file", "transcript_srt_file"):
+                    filename = "Transcript.srt" if "srt" in logical_key else "Transcript.txt"
+                    update_props[column_name] = notion_client.build_files_property(value, filename)
                 elif logical_key == "status":
                     update_props[column_name] = notion_client.build_select_property(value)
                 elif logical_key in ("video_date_time",):
@@ -864,7 +916,7 @@ def process_discord_video(
         safe_remove_file(video_file.path)
         if audio_file:
             safe_remove_file(audio_file.path)
-        safe_remove_file(transcription_file.path)
+        # Transcript files already cleaned up after upload
         
         logger.info("=" * 80)
         logger.info("✅ Discord video processing completed successfully!")
