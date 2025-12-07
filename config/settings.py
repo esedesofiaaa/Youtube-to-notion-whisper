@@ -110,8 +110,9 @@ CELERY_TASK_MAX_RETRIES = int(os.getenv('CELERY_TASK_MAX_RETRIES', '3'))
 CELERY_TASK_RETRY_DELAY = int(os.getenv('CELERY_TASK_RETRY_DELAY', '60'))  # 60 seconds
 
 # Task timeout (in seconds) - videos can take a long time
-CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '3600'))  # 1 hour
-CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '3300'))  # 55 minutes
+# Default: 4 hours for long videos with transcription
+CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '14400'))  # 4 hours
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '14100'))  # 3h 55min
 
 # Worker configuration
 # IMPORTANT: For CPU, use concurrency=1 (sequential processing)
