@@ -810,12 +810,50 @@ def process_discord_video(
                 field_map=destination_db.get("field_map", {})
             )
             logger.info(f"✅ Notion page created: {notion_page_url}")
+            
         else:  # update_origin
-            notion_client.update_video_page(
-                page_id=notion_page_id,
-                data=notion_data,
-                field_map=destination_db.get("field_map", {})
-            )
+            # Build properties dynamically based on field_map
+            field_map = destination_db.get("field_map", {})
+            update_props = {}
+
+            for logical_key, column_name in field_map.items():
+                value = notion_data.get(logical_key)
+                if value is None:
+                    continue
+
+                # Map by property type based on logical key
+                if logical_key in ("drive_folder_link", "video_file", "audio_file"):
+                    update_props[column_name] = notion_client.build_url_property(value)
+                elif logical_key == "status":
+                    update_props[column_name] = notion_client.build_select_property(value)
+                elif logical_key in ("video_date_time",):
+                    update_props[column_name] = notion_client.build_date_property(value)
+                elif logical_key == "length_min":
+                    update_props[column_name] = notion_client.build_number_property(value)
+                elif logical_key == "name":
+                    update_props[column_name] = notion_client.build_title_property(str(value))
+                elif logical_key == "transcript_text":
+                    update_props[column_name] = notion_client.build_text_property(str(value))
+
+                logger.info(f"   📌 {column_name}: {str(value)[:50]}...")
+
+            # Update the origin page
+            if update_props:
+                update_success = notion_client.update_page_properties(
+                    notion_page_id,
+                    update_props
+                )
+                if not update_success:
+                    raise Exception("Could not update origin page in Notion")
+                logger.info(f"✅ Origin page updated: {notion_page_id}")
+            else:
+                logger.warning("⚠️ No properties to update (field_map may be empty)")
+
+            # Add transcript dropdown to origin page
+            if transcription_text:
+                logger.info("📝 Adding transcript dropdown to origin page...")
+                notion_client.add_transcript_dropdown(notion_page_id, transcription_text)
+            
             notion_page_url = f"https://notion.so/{notion_page_id}"
             logger.info(f"✅ Notion page updated: {notion_page_url}")
 
