@@ -361,6 +361,19 @@ class NotionClient:
             return ""
         date_obj = prop.get("date")
         return date_obj.get("start", "") if date_obj else ""
+    
+    def _extract_files(self, prop: Optional[Dict]) -> Optional[str]:
+        """Extract first file URL from a files type property."""
+        if not prop or prop.get("type") != "files":
+            return None
+        files = prop.get("files", [])
+        if files and len(files) > 0:
+            first_file = files[0]
+            if first_file.get("type") == "external":
+                return first_file.get("external", {}).get("url")
+            elif first_file.get("type") == "file":
+                return first_file.get("file", {}).get("url")
+        return None
 
     def validate_webhook_data(self, data: Dict[str, Any]) -> tuple[bool, str]:
         """
@@ -378,6 +391,7 @@ class NotionClient:
             if field not in data or not data[field]:
                 return False, f"Required field missing: {field}"
 
+
         # Validate channel
         channel = data["channel"]
         if not is_valid_channel(channel):
@@ -389,3 +403,85 @@ class NotionClient:
             return False, f"Invalid YouTube URL: {data['youtube_url']}"
 
         return True, ""
+
+    def find_video_by_url(self, youtube_url: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for a video across all Notion databases by YouTube URL.
+        
+        Args:
+            youtube_url: YouTube video URL to search for
+            
+        Returns:
+            Dict with video info if found:
+                {
+                    "page_id": str,
+                    "database_id": str,
+                    "database_name": str,
+                    "page_url": str,
+                    "has_transcript": bool,
+                    "transcript_file": str | None,
+                    "transcript_srt_file": str | None
+                }
+            None if not found
+        """
+        from config.notion_config import VIDEOS_DB_ID, DISCORD_MESSAGE_DB_ID, CHANNEL_TO_DATABASE_MAPPING
+        
+        logger.info(f"🔍 Searching for video: {youtube_url}")
+        
+        # List of databases to search with their specific URL field names
+        databases_to_search = [
+            {"id": VIDEOS_DB_ID, "name": "Videos Database", "url_field": "Video Link"},
+            {"id": DISCORD_MESSAGE_DB_ID, "name": "Discord Message Database", "url_field": "URL"}
+        ]
+        
+        for db in databases_to_search:
+            try:
+                logger.debug(f"   Searching in: {db['name']}")
+                
+                # Query database filtering by URL
+                response = self.client.databases.query(
+                    database_id=db["id"],
+                    filter={
+                        "property": db["url_field"],
+                        "url": {
+                            "equals": youtube_url
+                        }
+                    }
+                )
+                
+                results = response.get("results", [])
+                
+                if results:
+                    page = results[0]  # Get first match
+                    page_id = page["id"]
+                    properties = page.get("properties", {})
+                    
+                    # Check if has transcript
+                    transcript_file_prop = properties.get("Transcript File", {})
+                    transcript_srt_prop = properties.get("Transcript SRT File", {})
+                    
+                    has_transcript = bool(
+                        self._extract_files(transcript_file_prop) or 
+                        self._extract_files(transcript_srt_prop)
+                    )
+                    
+                    logger.info(f"✅ Video found in {db['name']}: {page_id}")
+                    logger.info(f"   Has transcript: {has_transcript}")
+                    
+                    return {
+                        "page_id": page_id,
+                        "database_id": db["id"],
+                        "database_name": db["name"],
+                        "page_url": page.get("url"),
+                        "has_transcript": has_transcript,
+                        "transcript_file": self._extract_files(transcript_file_prop),
+                        "transcript_srt_file": self._extract_files(transcript_srt_prop)
+                    }
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Error searching in {db['name']}: {e}")
+                continue
+        
+        logger.info("❌ Video not found in any database")
+        return None
+

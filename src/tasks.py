@@ -153,7 +153,33 @@ def process_youtube_video(
             raise Exception("Could not authenticate with Google Drive API")
 
         # ============================================================
-        # 3. GET VIDEO INFORMATION
+        # 3. CHECK FOR EXISTING VIDEO (DEDUPLICATION)
+        # ============================================================
+        logger.info("🔍 Checking if video already exists in Notion...")
+        existing_video = notion_client.find_video_by_url(youtube_url)
+        
+        if existing_video and existing_video.get("has_transcript"):
+            logger.info("✅ Video already processed with transcript!")
+            logger.info(f"   Found in: {existing_video['database_name']}")
+            logger.info(f"   Page: {existing_video['page_url']}")
+            logger.info(f"   Skipping processing")
+            
+            return {
+                "status": "skipped",
+                "reason": "already_processed",
+                "existing_page_id": existing_video["page_id"],
+                "existing_page_url": existing_video["page_url"],
+                "database_name": existing_video["database_name"],
+                "message": f"Video already processed in {existing_video['database_name']}"
+            }
+        elif existing_video:
+            logger.info(f"⚠️ Video exists in {existing_video['database_name']} but has no transcript")
+            logger.info(f"   Will process and update existing page")
+        else:
+            logger.info("✅ Video not found in any database, proceeding with processing")
+
+        # ============================================================
+        # 4. GET VIDEO INFORMATION
         # ============================================================
         logger.info("📹 Getting video information...")
         video_info = downloader.get_video_info(youtube_url)
@@ -161,7 +187,7 @@ def process_youtube_video(
             raise Exception(f"Could not get video information: {youtube_url}")
 
         # ============================================================
-        # 4. RESOLVE DRIVE FOLDER
+        # 5. RESOLVE DRIVE FOLDER
         # ============================================================
         if not parent_drive_folder_id:
             parent_drive_folder_id = drive_folder_id_from_config
@@ -171,7 +197,7 @@ def process_youtube_video(
             raise ValueError(f"No Drive folder ID configured for channel: {channel}")
 
         # ============================================================
-        # 5. CREATE FOLDER IN DRIVE
+        # 6. CREATE FOLDER IN DRIVE
         # ============================================================
         folder_name = f"{video_info.upload_date} - {video_info.safe_title}"
         logger.info(f"📁 Creating folder in Drive: {folder_name}")
@@ -182,7 +208,7 @@ def process_youtube_video(
         drive_folder_url = f"https://drive.google.com/drive/folders/{drive_folder_id}"
 
         # ============================================================
-        # 6. STREAMING PIPELINE: DOWNLOAD + TRANSCRIBE SIMULTANEOUSLY
+        # 7. STREAMING PIPELINE: DOWNLOAD + TRANSCRIBE SIMULTANEOUSLY
         # ============================================================
         logger.info("🔴 Starting streaming pipeline (yt-dlp → FFmpeg → Whisper)...")
         
@@ -241,7 +267,7 @@ def process_youtube_video(
                 downloader.stop_stream(ffmpeg_process)
 
         # ============================================================
-        # 6b. FALLBACK: TRADITIONAL PROCESSING IF STREAMING FAILED
+        # 7b. FALLBACK: TRADITIONAL PROCESSING IF STREAMING FAILED
         # ============================================================
         if streaming_failed:
             logger.warning("=" * 60)
@@ -281,7 +307,7 @@ def process_youtube_video(
                 logger.warning("⚠️ Could not download audio for transcription")
 
         # ============================================================
-        # 7. ATOMIC UPLOAD TO DRIVE (after processing completes)
+        # 8. ATOMIC UPLOAD TO DRIVE (after processing completes)
         # ============================================================
         logger.info("📤 Starting atomic upload to Drive...")
         
@@ -420,7 +446,7 @@ def process_youtube_video(
                     safe_remove_file(local_srt_path)
 
         # ============================================================
-        # 8. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
+        # 9. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
         # ============================================================
         field_map = destination_db.get("field_map", {})
         status_value = destination_db.get("status_value")
