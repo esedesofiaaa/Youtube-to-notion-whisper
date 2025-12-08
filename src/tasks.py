@@ -119,6 +119,11 @@ def process_youtube_video(
     streaming_failed = False
     stream_error = None
     chunks_count = 0
+    
+    # Variables for error handling (will be set in try block)
+    action_type = None
+    field_map = {}
+    notion_client = None
 
     try:
         # ============================================================
@@ -132,6 +137,7 @@ def process_youtube_video(
         database_id = destination_db.get("database_id")  # May be None for update_origin
         database_name = destination_db["database_name"]
         drive_folder_id_from_config = destination_db.get("drive_folder_id")
+        field_map = destination_db.get("field_map", {})
         
         # Validate database_id is present for create_new_page
         if action_type == "create_new_page" and not database_id:
@@ -148,6 +154,13 @@ def process_youtube_video(
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
         drive_manager = DriveManager()
         notion_client = NotionClient()
+
+        # ============================================================
+        # 2.1. UPDATE STATUS: Processing (audit-process only)
+        # ============================================================
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Processing'...")
+            notion_client.update_status_field(discord_entry_id, "Processing", field_map)
 
         if not drive_manager.service:
             raise Exception("Could not authenticate with Google Drive API")
@@ -210,6 +223,11 @@ def process_youtube_video(
         # ============================================================
         # 7. STREAMING PIPELINE: DOWNLOAD + TRANSCRIBE SIMULTANEOUSLY
         # ============================================================
+        # Update status to "Downloading" (audit-process only)
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Downloading'...")
+            notion_client.update_status_field(discord_entry_id, "Downloading", field_map)
+        
         logger.info("🔴 Starting streaming pipeline (yt-dlp → FFmpeg → Whisper)...")
         
         video_path = None
@@ -226,6 +244,11 @@ def process_youtube_video(
 
             if not ffmpeg_process or not audio_pipe:
                 raise Exception("Failed to start streaming pipeline")
+
+            # Update status to "Transcribing" (audit-process only)
+            if action_type == "update_origin":
+                logger.info("📊 Updating status to 'Transcribing'...")
+                notion_client.update_status_field(discord_entry_id, "Transcribing", field_map)
 
             # Transcribe from the audio pipe in real-time
             logger.info("🎤 Starting real-time transcription...")
@@ -296,6 +319,11 @@ def process_youtube_video(
             
             if audio_file and audio_file.exists():
                 audio_path = audio_file.path
+                # Update status to "Transcribing" (audit-process only)
+                if action_type == "update_origin":
+                    logger.info("📊 Updating status to 'Transcribing'...")
+                    notion_client.update_status_field(discord_entry_id, "Transcribing", field_map)
+                
                 # Traditional transcription
                 logger.info("🎤 Transcribing audio (fallback mode)...")
                 transcription_result = transcriber.transcribe(audio_file, language="en")
@@ -309,6 +337,11 @@ def process_youtube_video(
         # ============================================================
         # 8. ATOMIC UPLOAD TO DRIVE (after processing completes)
         # ============================================================
+        # Update status to "Uploading to Drive" (audit-process only)
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Uploading to Drive'...")
+            notion_client.update_status_field(discord_entry_id, "Uploading to Drive", field_map)
+        
         logger.info("📤 Starting atomic upload to Drive...")
         
         drive_video_url = None
@@ -448,7 +481,6 @@ def process_youtube_video(
         # ============================================================
         # 9. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
         # ============================================================
-        field_map = destination_db.get("field_map", {})
         status_value = destination_db.get("status_value")
         name_format = destination_db.get("name_format", "default")
         logger.info(f"📝 Notion action: {action_type} ({database_name})...")
@@ -609,12 +641,24 @@ def process_youtube_video(
         return result
 
     except SoftTimeLimitExceeded:
-        logger.error(f"⏱️ Task {task_id} exceeded time limit")
+        error_msg = f"Task {task_id} exceeded time limit"
+        logger.error(f"⏱️ {error_msg}")
+        
+        # Update error status in Notion (audit-process only)
+        if action_type == "update_origin" and notion_client and field_map:
+            notion_client.update_error_field(discord_entry_id, error_msg, field_map)
+        
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 
     except Exception as e:
-        logger.error(f"❌ Error in video processing: {e}", exc_info=True)
+        error_msg = f"Error in video processing: {str(e)}"
+        logger.error(f"❌ {error_msg}", exc_info=True)
+        
+        # Update error status in Notion (audit-process only)
+        if action_type == "update_origin" and notion_client and field_map:
+            notion_client.update_error_field(discord_entry_id, error_msg, field_map)
+        
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 
@@ -668,6 +712,11 @@ def process_discord_video(
     logger.info(f"   Notion Page ID: {notion_page_id}")
     logger.info("=" * 80)
     
+    # Variables for error handling (will be set in try block)
+    action_type = None
+    field_map = {}
+    notion_client = None
+    
     try:
         # ============================================================
         # 1. VALIDATE AND GET CONFIGURATION
@@ -680,6 +729,7 @@ def process_discord_video(
         database_id = destination_db.get("database_id")
         database_name = destination_db["database_name"]
         drive_folder_id_from_config = destination_db.get("drive_folder_id")
+        field_map = destination_db.get("field_map", {})
         
         if action_type == "create_new_page" and not database_id:
             raise ValueError(f"database_id required for create_new_page action, channel: {channel}")
@@ -696,12 +746,24 @@ def process_discord_video(
         drive_manager = DriveManager()
         notion_client = NotionClient()
 
+        # ============================================================
+        # 2.1. UPDATE STATUS: Processing (audit-process only)
+        # ============================================================
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Processing'...")
+            notion_client.update_status_field(notion_page_id, "Processing", field_map)
+
         if not drive_manager.service:
             raise Exception("Could not authenticate with Google Drive API")
 
         # ============================================================
         # 3. DOWNLOAD VIDEO FROM DISCORD
         # ============================================================
+        # Update status to "Downloading" (audit-process only)
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Downloading'...")
+            notion_client.update_status_field(notion_page_id, "Downloading", field_map)
+        
         logger.info("📥 Downloading video from Discord...")
         video_file, message_data = discord_downloader.download_from_message_url(discord_message_url)
         
@@ -759,6 +821,11 @@ def process_discord_video(
         # ============================================================
         # 6. TRANSCRIBE AUDIO
         # ============================================================
+        # Update status to "Transcribing" (audit-process only)
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Transcribing'...")
+            notion_client.update_status_field(notion_page_id, "Transcribing", field_map)
+        
         logger.info("🎤 Starting transcription...")
         transcription_result = transcriber.transcribe(audio_file, language="en")
         
@@ -802,6 +869,11 @@ def process_discord_video(
         # ============================================================
         # 7. UPLOAD TO DRIVE
         # ============================================================
+        # Update status to "Uploading to Drive" (audit-process only)
+        if action_type == "update_origin":
+            logger.info("📊 Updating status to 'Uploading to Drive'...")
+            notion_client.update_status_field(notion_page_id, "Uploading to Drive", field_map)
+        
         logger.info("☁️ Uploading files to Google Drive...")
         
         # Upload video
@@ -888,7 +960,6 @@ def process_discord_video(
             
         else:  # update_origin
             # Build properties dynamically based on field_map
-            field_map = destination_db.get("field_map", {})
             update_props = {}
 
             for logical_key, column_name in field_map.items():
@@ -962,7 +1033,13 @@ def process_discord_video(
         }
 
     except Exception as e:
-        logger.error(f"❌ Error in Discord video processing: {e}", exc_info=True)
+        error_msg = f"Error in Discord video processing: {str(e)}"
+        logger.error(f"❌ {error_msg}", exc_info=True)
+        
+        # Update error status in Notion (audit-process only)
+        if action_type == "update_origin" and notion_client and field_map:
+            notion_client.update_error_field(notion_page_id, error_msg, field_map)
+        
         clean_temp_directory(TEMP_DOWNLOAD_DIR)
         raise
 

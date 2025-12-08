@@ -145,9 +145,10 @@ CHANNEL_TO_DATABASE_MAPPING = {
             # Metadata
             "status": "Transcript Process Status",    # select
             "youtube_listing_status": "YoutubeListingStatus",  # select - Public/Unlisted
-            "length_min": "Lenght min"                # number (typo in Notion)
+            "length_min": "Lenght min",               # number (typo in Notion)
+            "process_errors": "ProcessErrors"         # text - error messages
         },
-        "status_value": "complete"
+        "status_value": "Complete"
     }
 }
 

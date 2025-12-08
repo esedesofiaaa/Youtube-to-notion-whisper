@@ -220,6 +220,87 @@ class NotionClient:
             logger.error(f"❌ Error updating page properties: {e}", exc_info=True)
             return False
 
+    def update_status_field(self, page_id: str, status_value: str, field_map: dict) -> bool:
+        """
+        Update only the Transcript Process Status field (optimized for progress tracking).
+        
+        This method is used during audit-process pipeline to track processing progress
+        in real-time without updating all other fields.
+
+        Args:
+            page_id: Notion page ID to update
+            status_value: Status value to set (e.g., "Processing", "Downloading", etc.)
+            field_map: Field mapping dict to find the status column name
+
+        Returns:
+            bool: True if updated successfully
+        """
+        try:
+            # Get the status field name from field_map
+            status_field_name = field_map.get("status")
+            if not status_field_name:
+                logger.warning("⚠️ No 'status' field found in field_map, skipping status update")
+                return False
+
+            # Update only the status field
+            properties = {
+                status_field_name: self.build_select_property(status_value)
+            }
+            
+            self.client.pages.update(
+                page_id=page_id,
+                properties=properties
+            )
+            logger.info(f"📊 Status updated to '{status_value}' for page: {page_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error updating status field: {e}", exc_info=True)
+            return False
+
+    def update_error_field(self, page_id: str, error_message: str, field_map: dict) -> bool:
+        """
+        Update the Process Errors field when an error occurs.
+        
+        This method is used during audit-process pipeline to record error details
+        when processing fails.
+
+        Args:
+            page_id: Notion page ID to update
+            error_message: Error message to record
+            field_map: Field mapping dict to find the process_errors column name
+
+        Returns:
+            bool: True if updated successfully
+        """
+        try:
+            # Get the error field name from field_map
+            error_field_name = field_map.get("process_errors")
+            if not error_field_name:
+                logger.warning("⚠️ No 'process_errors' field found in field_map, skipping error update")
+                return False
+
+            # Update the error field and status
+            properties = {
+                error_field_name: self.build_text_property(error_message)
+            }
+            
+            # Also update status to "Error" if status field exists
+            status_field_name = field_map.get("status")
+            if status_field_name:
+                properties[status_field_name] = self.build_select_property("Error")
+            
+            self.client.pages.update(
+                page_id=page_id,
+                properties=properties
+            )
+            logger.info(f"❌ Error recorded for page: {page_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error updating error field: {e}", exc_info=True)
+            return False
+
     # ========== PROPERTY BUILDER METHODS (Data-Driven) ==========
 
     @staticmethod

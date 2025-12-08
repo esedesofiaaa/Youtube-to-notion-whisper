@@ -1,5 +1,82 @@
 # Changelog
 
+## [Status Tracking para Audit Process - 2025-12-08]
+
+### 🎯 NUEVA FUNCIONALIDAD: Seguimiento de Estados en Tiempo Real
+
+#### Descripción
+Se implementó un sistema de actualización de estados en tiempo real para el pipeline de `audit-process`. 
+Ahora el campo "Transcript Process Status" en Notion se actualiza automáticamente durante todo el 
+procesamiento del video, permitiendo monitorear el progreso de cada tarea.
+
+**Esta funcionalidad SOLO se aplica al canal `audit-process`** (action_type: "update_origin").
+
+### 📊 Estados Implementados
+
+El campo "Transcript Process Status" se actualiza con los siguientes valores:
+
+1. **"Processing"** - Cuando comienza el procesamiento del video
+2. **"Downloading"** - Durante la descarga del video de YouTube/Discord
+3. **"Transcribing"** - Durante la transcripción del audio con Whisper
+4. **"Uploading to Drive"** - Mientras se suben los archivos a Google Drive
+5. **"Complete"** - Cuando el procesamiento termina exitosamente
+6. **"Error"** - Si ocurre algún error durante el procesamiento
+
+### 🔧 Manejo de Errores
+
+- Cuando ocurre un error, se actualiza el estado a **"Error"**
+- El mensaje de error se guarda en el campo **"ProcessErrors"**
+- Esto permite rastrear fácilmente qué videos fallaron y por qué
+
+### 📝 Cambios Implementados
+
+#### `src/notion_client.py`
+- **Nuevo método**: `update_status_field()` - Actualiza solo el campo de estado (optimizado)
+- **Nuevo método**: `update_error_field()` - Actualiza el campo de errores y establece status="Error"
+
+#### `config/notion_config.py`
+- Agregado mapeo de campo `"process_errors": "ProcessErrors"` en configuración de `audit-process`
+- Actualizado `status_value` de `"complete"` a `"Complete"` para consistencia
+
+#### `src/tasks.py`
+**Función `process_youtube_video`:**
+- Actualiza estado a "Processing" al inicio (solo audit-process)
+- Actualiza estado a "Downloading" antes de iniciar descarga
+- Actualiza estado a "Transcribing" antes de transcripción (tanto en streaming como fallback)
+- Actualiza estado a "Uploading to Drive" antes de subir archivos
+- Actualiza estado a "Complete" al finalizar exitosamente (vía status_value)
+- Actualiza estado a "Error" y guarda mensaje en caso de excepción
+
+**Función `process_discord_video`:**
+- Mismas actualizaciones de estado aplicadas al flujo de Discord
+- Consistencia con el pipeline de YouTube
+
+### 🎯 Beneficios
+
+✅ **Visibilidad en tiempo real**: Saber exactamente en qué etapa está cada video
+✅ **Debugging simplificado**: Identificar rápidamente dónde falló un procesamiento
+✅ **Monitoreo proactivo**: Detectar videos atascados en una etapa específica
+✅ **Trazabilidad**: Historial completo del estado de cada video en Notion
+✅ **Sin impacto en otros pipelines**: Solo afecta a audit-process, otros canales funcionan igual
+
+### 📋 Ejemplo de Flujo
+
+```
+audit-process → Processing → Downloading → Transcribing → Uploading to Drive → Complete
+                     ↓
+                   Error (si falla en cualquier etapa + mensaje en ProcessErrors)
+```
+
+### 🔄 Compatibilidad
+
+- ✅ Compatible con pipeline de streaming
+- ✅ Compatible con fallback tradicional
+- ✅ Compatible con videos de YouTube
+- ✅ Compatible con videos de Discord
+- ✅ No afecta a otros canales (market-outlook, market-analysis-streams, etc.)
+
+---
+
 ## [Pipeline Unificado de Streaming - 2025-12-03]
 
 ### 🎯 UNIFICACIÓN: Pipeline de Streaming como Estándar
