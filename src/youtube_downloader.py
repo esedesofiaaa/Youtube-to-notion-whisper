@@ -563,6 +563,7 @@ class YouTubeDownloader:
             # - libx264: H.264 codec (widely compatible)
             # - CRF: Quality control (lower = better quality, larger file)
             # - preset: Speed vs compression efficiency
+            # - r: Limit framerate to 30fps (sufficient for talks/presentations)
             # - aac: Audio codec for compatibility
             # - movflags +faststart: Optimize for web playback (moov atom at start)
             cmd = [
@@ -571,6 +572,7 @@ class YouTubeDownloader:
                 '-c:v', 'libx264',              # Video codec
                 '-crf', str(COMPRESSION_CRF),   # Quality (0-51, 23=default, 28=high compression)
                 '-preset', COMPRESSION_PRESET,  # Encoding speed/efficiency
+                '-r', '30',                     # Limit to 30 FPS
                 '-c:a', 'aac',                  # Audio codec
                 '-b:a', COMPRESSION_AUDIO_BITRATE,  # Audio bitrate
                 '-movflags', '+faststart',      # Web optimization
