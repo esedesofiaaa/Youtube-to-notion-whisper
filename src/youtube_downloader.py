@@ -520,3 +520,102 @@ class YouTubeDownloader:
         except Exception as e:
             logger.error(f"❌ Error extracting audio: {e}", exc_info=True)
             return None
+
+    def compress_video(self, input_path: str) -> Optional[str]:
+        """
+        Compress video using FFmpeg with H.264 codec to save storage space.
+        
+        This method reduces video file size while maintaining acceptable quality
+        using the CRF (Constant Rate Factor) encoding method. The compressed
+        video is optimized for web playback with the faststart flag.
+        
+        Args:
+            input_path: Path to the video file to compress
+            
+        Returns:
+            str: Path to compressed video file, or None if compression fails
+        """
+        from config.settings import COMPRESSION_CRF, COMPRESSION_PRESET, COMPRESSION_AUDIO_BITRATE
+        
+        logger.info(f"🗜️ compress_video called")
+        logger.info(f"   Input path: {input_path}")
+        logger.info(f"   File exists: {os.path.exists(input_path)}")
+        
+        if not os.path.exists(input_path):
+            logger.error(f"❌ Video file not found: {input_path}")
+            return None
+        
+        # Get original file size
+        original_size = os.path.getsize(input_path) / (1024 * 1024)  # MB
+        logger.info(f"   Original file size: {original_size:.2f} MB")
+        
+        # Generate compressed filename (add _compressed suffix before extension)
+        base_path, ext = os.path.splitext(input_path)
+        compressed_path = f"{base_path}_compressed{ext}"
+        
+        logger.info(f"   Output path: {compressed_path}")
+        logger.info(f"   Compression settings: CRF={COMPRESSION_CRF}, Preset={COMPRESSION_PRESET}")
+        
+        try:
+            logger.info(f"🗜️ Compressing video: {os.path.basename(input_path)}")
+            
+            # FFmpeg command for video compression
+            # - libx264: H.264 codec (widely compatible)
+            # - CRF: Quality control (lower = better quality, larger file)
+            # - preset: Speed vs compression efficiency
+            # - aac: Audio codec for compatibility
+            # - movflags +faststart: Optimize for web playback (moov atom at start)
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-c:v', 'libx264',              # Video codec
+                '-crf', str(COMPRESSION_CRF),   # Quality (0-51, 23=default, 28=high compression)
+                '-preset', COMPRESSION_PRESET,  # Encoding speed/efficiency
+                '-c:a', 'aac',                  # Audio codec
+                '-b:a', COMPRESSION_AUDIO_BITRATE,  # Audio bitrate
+                '-movflags', '+faststart',      # Web optimization
+                '-y',                           # Overwrite output file
+                compressed_path
+            ]
+            
+            logger.info(f"   Running FFmpeg command: {' '.join(cmd)}")
+            
+            # Run compression with timeout (allow more time for large files)
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=1800  # 30 minutes timeout
+            )
+            
+            logger.info(f"   FFmpeg return code: {result.returncode}")
+            logger.info(f"   Output file exists: {os.path.exists(compressed_path)}")
+            
+            if result.returncode == 0 and os.path.exists(compressed_path):
+                # Get compressed file size and calculate compression ratio
+                compressed_size = os.path.getsize(compressed_path) / (1024 * 1024)  # MB
+                compression_ratio = ((original_size - compressed_size) / original_size) * 100
+                
+                logger.info(f"✅ Video compressed successfully!")
+                logger.info(f"   Original size: {original_size:.2f} MB")
+                logger.info(f"   Compressed size: {compressed_size:.2f} MB")
+                logger.info(f"   Space saved: {original_size - compressed_size:.2f} MB ({compression_ratio:.1f}%)")
+                
+                return compressed_path
+            else:
+                error_msg = result.stderr.decode('utf-8', errors='replace')
+                logger.error(f"❌ FFmpeg compression failed")
+                logger.error(f"   Return code: {result.returncode}")
+                logger.error(f"   STDERR (last 500 chars): {error_msg[-500:]}")
+                return None
+                
+        except subprocess.TimeoutExpired:
+            logger.error("❌ FFmpeg compression timed out (exceeded 30 minutes)")
+            return None
+        except FileNotFoundError:
+            logger.error("❌ FFmpeg not found. Please install FFmpeg.")
+            logger.error("   Install with: sudo apt-get install ffmpeg")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error compressing video: {e}", exc_info=True)
+            return None

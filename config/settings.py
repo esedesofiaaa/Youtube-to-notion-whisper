@@ -148,3 +148,21 @@ STREAMING_MAX_RETRIES = int(os.getenv('STREAMING_MAX_RETRIES', '3'))
 
 # Timeout (seconds) for waiting on stream data before considering it stalled
 STREAMING_READ_TIMEOUT = float(os.getenv('STREAMING_READ_TIMEOUT', '60.0'))
+
+# ========== VIDEO COMPRESSION ==========
+# Enable compression before uploading to Drive to save storage space
+COMPRESSION_ENABLED = os.getenv('COMPRESSION_ENABLED', 'True').lower() == 'true'
+
+# CRF (Constant Rate Factor): 0-51 (0=lossless, 23=default, 28=high compression acceptable)
+# Lower values = better quality but larger file size
+# Recommended: 23-28 for good balance
+COMPRESSION_CRF = int(os.getenv('COMPRESSION_CRF', '28'))
+
+# Preset: Speed vs compression efficiency trade-off
+# Options: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+# Recommended: fast or medium for good balance
+COMPRESSION_PRESET = os.getenv('COMPRESSION_PRESET', 'fast')
+
+# Audio bitrate for compressed video (in kbps)
+# 128k is good for most use cases, 192k for higher quality
+COMPRESSION_AUDIO_BITRATE = os.getenv('COMPRESSION_AUDIO_BITRATE', '128k')

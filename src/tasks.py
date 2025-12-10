@@ -21,7 +21,8 @@ from config.settings import (
     WHISPER_MODEL_DEFAULT,
     TRANSCRIPTION_FILE_FORMAT,
     CELERY_TASK_MAX_RETRIES,
-    CELERY_TASK_RETRY_DELAY
+    CELERY_TASK_RETRY_DELAY,
+    COMPRESSION_ENABLED
 )
 from config.notion_config import (
     get_destination_database
@@ -365,6 +366,24 @@ def process_youtube_video(
                 else:
                     logger.warning("⚠️ MP4 conversion failed, using MKV")
                     final_video_path = video_path
+            
+            # ============================================================
+            # 7.5. COMPRESS VIDEO (if enabled)
+            # ============================================================
+            if COMPRESSION_ENABLED:
+                logger.info("🗜️ Compressing video before upload...")
+                compressed_path = downloader.compress_video(final_video_path)
+                
+                if compressed_path and os.path.exists(compressed_path):
+                    # Compression successful - remove original and use compressed
+                    logger.info("✅ Compression successful, using compressed video")
+                    safe_remove_file(final_video_path)
+                    final_video_path = compressed_path
+                else:
+                    # Compression failed - continue with original
+                    logger.warning("⚠️ Compression failed, using original video")
+            else:
+                logger.info("ℹ️ Video compression disabled (COMPRESSION_ENABLED=False)")
             
             # Extract audio from video if we don't have audio yet (streaming mode)
             if not audio_path or not os.path.exists(audio_path):
@@ -865,6 +884,27 @@ def process_discord_video(
                 logger.info(f"✅ SRT file generated: {os.path.basename(srt_path)}")
             except Exception as e:
                 logger.warning(f"⚠️ Could not generate SRT file: {e}")
+
+        # ============================================================
+        # 6.5. COMPRESS VIDEO (if enabled)
+        # ============================================================
+        if COMPRESSION_ENABLED:
+            logger.info("🗜️ Compressing video before upload...")
+            compressed_path = temp_downloader.compress_video(video_file.path)
+            
+            if compressed_path and os.path.exists(compressed_path):
+                # Compression successful - remove original and update video_file
+                logger.info("✅ Compression successful, using compressed video")
+                safe_remove_file(video_file.path)
+                
+                # Update video_file object with compressed file info
+                video_file.path = compressed_path
+                video_file.filename = os.path.basename(compressed_path)
+            else:
+                # Compression failed - continue with original
+                logger.warning("⚠️ Compression failed, using original video")
+        else:
+            logger.info("ℹ️ Video compression disabled (COMPRESSION_ENABLED=False)")
 
         # ============================================================
         # 7. UPLOAD TO DRIVE

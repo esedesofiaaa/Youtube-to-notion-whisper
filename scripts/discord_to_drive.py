@@ -134,6 +134,25 @@ def main():
         # Download video
         video_file = downloader.download_video(video_info)
         if video_file and video_file.exists():
+            # Compress video if enabled
+            if COMPRESSION_ENABLED:
+                logger.info("🗜️ Compressing video before upload...")
+                compressed_path = downloader.compress_video(video_file.path)
+                
+                if compressed_path and os.path.exists(compressed_path):
+                    # Compression successful - remove original and update video_file
+                    logger.info("✅ Compression successful, using compressed video")
+                    safe_remove_file(video_file.path)
+                    
+                    # Update video_file object with compressed file info
+                    video_file.path = compressed_path
+                    video_file.filename = os.path.basename(compressed_path)
+                else:
+                    # Compression failed - continue with original
+                    logger.warning("⚠️ Compression failed, using original video")
+            else:
+                logger.info("ℹ️ Video compression disabled (COMPRESSION_ENABLED=False)")
+            
             try:
                 drive_manager.upload_if_not_exists(video_file, drive_folder_id)
             except Exception as e:
