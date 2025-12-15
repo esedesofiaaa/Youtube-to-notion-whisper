@@ -14,6 +14,20 @@ fi
 # Establecer PYTHONPATH
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
+# Cargar variables de entorno
+if [ -f ".env" ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
+
+# Usar timeouts desde variables de entorno (con fallbacks)
+TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-14400}
+SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-14100}
+
+echo "⏱️  Time limits configurados:"
+echo "   Hard limit: ${TIME_LIMIT}s ($(($TIME_LIMIT / 60)) minutos)"
+echo "   Soft limit: ${SOFT_TIME_LIMIT}s ($(($SOFT_TIME_LIMIT / 60)) minutos)"
+echo ""
+
 # Iniciar worker con procesamiento secuencial
 # --concurrency=1: Procesa solo un video a la vez (importante para CPU)
 # --prefetch-multiplier=1: No prefetch tareas adicionales
@@ -22,8 +36,8 @@ PYTHONPATH=$(pwd) celery -A src.celery_app worker \
     --concurrency=1 \
     --prefetch-multiplier=1 \
     --max-tasks-per-child=5 \
-    --time-limit=3600 \
-    --soft-time-limit=3300
+    --time-limit=${TIME_LIMIT} \
+    --soft-time-limit=${SOFT_TIME_LIMIT}
 
 echo "========================================="
 echo "✅ Celery Worker detenido"
