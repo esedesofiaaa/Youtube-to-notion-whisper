@@ -38,8 +38,8 @@ if [ -f ".env" ]; then
 fi
 
 # Usar timeouts desde variables de entorno (con fallbacks que coinciden con GitHub Actions)
-TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-14400}    # Default: 4 horas (240 min)
-SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-14100}  # Default: 3h 55min (235 min)
+TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-28800}    # Default: 8 horas (480 min)
+SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-28500}  # Default: 7h 55min (475 min)
 
 # Iniciar Celery Worker en segundo plano
 echo ""
