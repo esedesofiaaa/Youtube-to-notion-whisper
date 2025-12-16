@@ -37,13 +37,16 @@ if [ -f ".env" ]; then
     export $(grep -v '^#' .env | xargs)
 fi
 
-# Usar timeouts desde variables de entorno (con fallbacks que coinciden con GitHub Actions)
-TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-28800}    # Default: 8 horas (480 min)
-SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-28500}  # Default: 7h 55min (475 min)
+# Usar timeouts desde variables de entorno (con fallbacks que coinciden con config/settings.py)
+# Nota: hard/soft < visibility_timeout para que el worker tenga control antes de que Redis re-encole.
+VISIBILITY_TIMEOUT=${CELERY_BROKER_VISIBILITY_TIMEOUT:-28800}  # Default: 8 horas
+TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-27000}    # Default: 7.5 horas
+SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-26000}  # Default: ~7.2 horas
 
 # Iniciar Celery Worker en segundo plano
 echo ""
 echo "🔧 Iniciando Celery Worker (modo secuencial: 1 video a la vez)..."
+echo "   Visibility timeout=${VISIBILITY_TIMEOUT}s"
 echo "   Time limits: Hard=${TIME_LIMIT}s, Soft=${SOFT_TIME_LIMIT}s"
 PYTHONPATH=$(pwd) celery -A src.celery_app worker \
     --loglevel=info \

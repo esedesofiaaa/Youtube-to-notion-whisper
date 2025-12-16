@@ -11,7 +11,8 @@ from config.settings import (
     CELERY_TIMEZONE,
     CELERY_ENABLE_UTC,
     CELERY_TASK_TIME_LIMIT,
-    CELERY_TASK_SOFT_TIME_LIMIT
+    CELERY_TASK_SOFT_TIME_LIMIT,
+    CELERY_BROKER_VISIBILITY_TIMEOUT
 )
 
 # Create Celery instance
@@ -28,6 +29,11 @@ celery_app.conf.update(
     accept_content=CELERY_ACCEPT_CONTENT,
     timezone=CELERY_TIMEZONE,
     enable_utc=CELERY_ENABLE_UTC,
+    broker_transport_options={
+        'visibility_timeout': CELERY_BROKER_VISIBILITY_TIMEOUT,
+        'fanout_prefix': True,
+        'fanout_patterns': True,
+    },
     task_time_limit=CELERY_TASK_TIME_LIMIT,
     task_soft_time_limit=CELERY_TASK_SOFT_TIME_LIMIT,
     task_track_started=True,  # Track when a task starts

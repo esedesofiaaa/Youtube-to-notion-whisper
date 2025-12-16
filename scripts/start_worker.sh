@@ -19,11 +19,14 @@ if [ -f ".env" ]; then
     export $(grep -v '^#' .env | xargs)
 fi
 
-# Usar timeouts desde variables de entorno (con fallbacks que coinciden con GitHub Actions)
-TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-28800}    # Default: 8 horas (480 min)
-SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-28500}  # Default: 7h 55min (475 min)
+# Usar timeouts desde variables de entorno (con fallbacks que coinciden con config/settings.py)
+# Nota: hard/soft < visibility_timeout para que el worker tenga control antes de que Redis re-encole.
+VISIBILITY_TIMEOUT=${CELERY_BROKER_VISIBILITY_TIMEOUT:-28800}  # Default: 8 horas
+TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-27000}    # Default: 7.5 horas
+SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-26000}  # Default: ~7.2 horas
 
 echo "⏱️  Time limits configurados:"
+echo "   Visibility timeout: ${VISIBILITY_TIMEOUT}s ($(($VISIBILITY_TIMEOUT / 60)) minutos)"
 echo "   Hard limit: ${TIME_LIMIT}s ($(($TIME_LIMIT / 60)) minutos)"
 echo "   Soft limit: ${SOFT_TIME_LIMIT}s ($(($SOFT_TIME_LIMIT / 60)) minutos)"
 echo ""
