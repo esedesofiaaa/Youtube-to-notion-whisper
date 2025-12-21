@@ -73,6 +73,7 @@ jobs:
           NOTION_TOKEN=$NOTION_TOKEN
           DISCORD_MESSAGE_DB_ID=${{ vars.DISCORD_MESSAGE_DB_ID }}
           VIDEOS_DB_ID=${{ vars.VIDEOS_DB_ID }}
+          DRIVE_UPLOADS_DB_ID=${{ vars.DRIVE_UPLOADS_DB_ID }}
 
           # ========== GOOGLE DRIVE FOLDERS ==========
           DRIVE_FOLDER_MARKET_OUTLOOK=${{ vars.DRIVE_FOLDER_MARKET_OUTLOOK }}
@@ -80,6 +81,7 @@ jobs:
           DRIVE_FOLDER_EDUCATION=${{ vars.DRIVE_FOLDER_EDUCATION }}
           DRIVE_FOLDER_MHC_RECORDINGS=${{ vars.DRIVE_FOLDER_MHC_RECORDINGS }}
           DRIVE_FOLDER_AUDIT_PROCESS=${{ vars.DRIVE_FOLDER_AUDIT_PROCESS }}
+          DRIVE_FOLDER_UPLOADS=${{ vars.DRIVE_FOLDER_UPLOADS }}
 
           # Legacy variables
           NOTION_DATABASE_ID=${{ vars.NOTION_DATABASE_ID }}

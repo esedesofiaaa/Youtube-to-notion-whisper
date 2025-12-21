@@ -19,6 +19,7 @@ DISCORD_MESSAGE_DB_ID = os.getenv('DISCORD_MESSAGE_DB_ID')
 
 # Destination databases
 VIDEOS_DB_ID = os.getenv('VIDEOS_DB_ID')  # Unified videos database
+DRIVE_UPLOADS_DB_ID = os.getenv('DRIVE_UPLOADS_DB_ID') or VIDEOS_DB_ID # Drive uploads database (defaults to VIDEOS_DB_ID)
 
 # ========== CHANNEL TO DATABASE MAPPING ==========
 # Each Discord channel is mapped to a specific Notion database
@@ -90,9 +91,32 @@ DRIVE_FOLDER_MARKET_ANALYSIS = os.getenv('DRIVE_FOLDER_MARKET_ANALYSIS')
 DRIVE_FOLDER_EDUCATION = os.getenv('DRIVE_FOLDER_EDUCATION')
 DRIVE_FOLDER_MHC_RECORDINGS = os.getenv('DRIVE_FOLDER_MHC_RECORDINGS')
 DRIVE_FOLDER_AUDIT_PROCESS = os.getenv('DRIVE_FOLDER_AUDIT_PROCESS')
+DRIVE_FOLDER_UPLOADS = os.getenv('DRIVE_FOLDER_UPLOADS')
 
 # ========== CHANNEL MAPPINGS ==========
 CHANNEL_TO_DATABASE_MAPPING = {
+    # Drive Uploads
+    "drive-uploads": {
+        "action_type": "create_new_page",
+        "database_id": DRIVE_UPLOADS_DB_ID,
+        "database_name": "Drive Uploads DB",
+        "drive_folder_id": DRIVE_FOLDER_UPLOADS,
+        "field_map": {
+            "name": "Name",
+            "status": "Transcript Process Status",
+            "video_file": "Video FIle Link",
+            "drive_folder_link": "GoogleDriveFolderLink",
+            "audio_file": "Audio File Link",
+            "transcript_text": "Transcript",
+            "transcript_file": "Transcript File",
+            "transcript_srt_file": "Transcript SRT File",
+            "video_date_time": "Video Date and time",
+            "length_min": "Lenght min",
+            "process_errors": "ProcessErrors"
+        },
+        "status_value": "Success"
+    },
+
     # Both channels use the same Videos Database with same configuration
     "market-outlook": {
         **_VIDEOS_DB_BASE_CONFIG,

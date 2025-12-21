@@ -1084,6 +1084,252 @@ def process_discord_video(
         raise
 
 
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    max_retries=CELERY_TASK_MAX_RETRIES,
+    default_retry_delay=CELERY_TASK_RETRY_DELAY,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True
+)
+def process_drive_video(
+    self,
+    drive_file_id: str,
+    file_name: str,
+    channel: str = "drive-uploads"
+) -> dict:
+    """
+    Process a video uploaded directly to Google Drive.
+
+    Args:
+        drive_file_id: ID of the file in Google Drive
+        file_name: Name of the file
+        channel: Channel name (defaults to "drive-uploads")
+
+    Returns:
+        dict: Information about the completed task
+    """
+    task_id = self.request.id
+    logger.info("=" * 80)
+    logger.info(f"🚀 Starting Drive video processing [Task ID: {task_id}]")
+    logger.info(f"   Drive File ID: {drive_file_id}")
+    logger.info(f"   File Name: {file_name}")
+    logger.info(f"   Channel: {channel}")
+    logger.info("=" * 80)
+
+    # Variables for cleanup
+    temp_video_path = None
+    temp_audio_path = None
+    temp_compressed_path = None
+    transcription_result = None
+    
+    try:
+        # ============================================================
+        # 1. VALIDATE AND GET CONFIGURATION
+        # ============================================================
+        destination_db = get_destination_database(channel)
+        if not destination_db:
+            raise ValueError(f"No destination database found for channel: {channel}")
+
+        action_type = destination_db.get("action_type", "create_new_page")
+        database_id = destination_db.get("database_id")
+        database_name = destination_db["database_name"]
+        drive_folder_id_from_config = destination_db.get("drive_folder_id")
+        field_map = destination_db.get("field_map", {})
+        
+        logger.info(f"📊 Destination database: {database_name}")
+        logger.info(f"📁 Drive folder ID: {drive_folder_id_from_config}")
+
+        # ============================================================
+        # 2. INITIALIZE COMPONENTS
+        # ============================================================
+        ensure_directory_exists(TEMP_DOWNLOAD_DIR)
+        downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
+        drive_manager = DriveManager()
+        notion_client = NotionClient()
+
+        if not drive_manager.service:
+            raise Exception("Could not authenticate with Google Drive API")
+
+        # ============================================================
+        # 3. DOWNLOAD VIDEO
+        # ============================================================
+        from utils.helpers import sanitize_filename
+        safe_filename = sanitize_filename(file_name)
+        temp_video_path = os.path.join(TEMP_DOWNLOAD_DIR, safe_filename)
+        
+        logger.info(f"⬇️ Downloading video from Drive: {drive_file_id}")
+        if not drive_manager.download_file(drive_file_id, temp_video_path):
+            raise Exception(f"Failed to download file {drive_file_id}")
+            
+        video_file = MediaFile(temp_video_path, safe_filename, "video")
+
+        # ============================================================
+        # 4. TRANSCRIBE AUDIO
+        # ============================================================
+        logger.info("🎙️ Transcribing audio...")
+        # We can transcribe directly from the video file with faster-whisper
+        transcription_result = transcriber.transcribe(video_file)
+        
+        if not transcription_result:
+            raise Exception("Transcription failed")
+            
+        # Save transcription files
+        base_name = os.path.splitext(safe_filename)[0]
+        txt_path = os.path.join(TEMP_DOWNLOAD_DIR, f"{base_name}.txt")
+        srt_path = os.path.join(TEMP_DOWNLOAD_DIR, f"{base_name}.srt")
+        
+        transcription_result.save(txt_path)
+        
+        # Generate SRT if segments available
+        if transcription_result.segments:
+            from utils.helpers import generate_srt
+            generate_srt(transcription_result.segments, srt_path)
+            transcription_result.srt_path = srt_path
+
+        # ============================================================
+        # 5. EXTRACT AUDIO & COMPRESS VIDEO
+        # ============================================================
+        final_video_path = temp_video_path
+        audio_path = None
+        
+        # Extract audio
+        logger.info("🎵 Extracting audio from video...")
+        audio_file_obj = downloader.extract_audio_from_video(temp_video_path)
+        if audio_file_obj and audio_file_obj.exists():
+            audio_path = audio_file_obj.path
+            logger.info(f"✅ Audio extracted: {audio_path}")
+        else:
+            logger.warning("⚠️ Audio extraction failed")
+
+        # Compress video
+        if COMPRESSION_ENABLED:
+            logger.info("🗜️ Compressing video...")
+            compressed_path = downloader.compress_video(temp_video_path)
+            if compressed_path and os.path.exists(compressed_path):
+                final_video_path = compressed_path
+                temp_compressed_path = compressed_path
+                logger.info("✅ Video compressed successfully")
+            else:
+                logger.warning("⚠️ Compression failed, using original video")
+
+        # ============================================================
+        # 6. UPLOAD TO DRIVE
+        # ============================================================
+        logger.info("☁️ Uploading files to Drive...")
+        
+        # Create folder: Date - Name
+        from datetime import datetime
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        folder_name = f"{current_date} - {base_name}"
+        
+        folder_id = drive_manager.create_folder(folder_name, drive_folder_id_from_config)
+        if not folder_id:
+            raise Exception("Failed to create folder in Drive")
+            
+        # Upload video
+        video_drive_link = drive_manager.upload_file(
+            final_video_path, 
+            folder_id, 
+            f"{base_name}.mp4" if COMPRESSION_ENABLED else safe_filename
+        )
+        
+        # Upload audio
+        audio_drive_link = None
+        if audio_path:
+            audio_drive_link = drive_manager.upload_file(
+                audio_path,
+                folder_id,
+                os.path.basename(audio_path)
+            )
+        
+        # Upload transcription
+        transcript_drive_link = drive_manager.upload_file(txt_path, folder_id, f"{base_name}.txt")
+        
+        # Upload SRT if exists
+        srt_drive_link = None
+        if transcription_result.srt_path and os.path.exists(transcription_result.srt_path):
+            srt_drive_link = drive_manager.upload_file(srt_path, folder_id, f"{base_name}.srt")
+            
+        folder_link = f"https://drive.google.com/drive/folders/{folder_id}"
+
+        # ============================================================
+        # 7. CREATE NOTION PAGE
+        # ============================================================
+        logger.info("📝 Creating Notion page...")
+        
+        # Prepare data
+        notion_data = {
+            "name": file_name,
+            "status": destination_db.get("status_value", "Success"),
+            "video_file": video_drive_link,
+            "drive_folder_link": folder_link,
+            "audio_file": audio_drive_link,
+            "transcript_text": transcription_result.text[:2000],
+            "transcript_file": transcript_drive_link,
+            "transcript_srt_file": srt_drive_link,
+            "video_date_time": datetime.now().isoformat(),
+            "length_min": 0, # We could calculate this if needed
+            "process_errors": None
+        }
+        
+        page = notion_client.create_video_page(database_id, field_map, notion_data)
+        
+        if not page:
+            raise Exception("Failed to create Notion page")
+            
+        page_url = page.get("url")
+        logger.info(f"✅ Notion page created: {page_url}")
+
+        # ============================================================
+        # 8. CLEANUP
+        # ============================================================
+        # Delete local temporary files
+        safe_remove_file(temp_video_path)
+        safe_remove_file(txt_path)
+        safe_remove_file(srt_path)
+        if temp_compressed_path:
+            safe_remove_file(temp_compressed_path)
+        if audio_path:
+            safe_remove_file(audio_path)
+            
+        # Delete original file from Drive (source)
+        logger.info(f"🗑️ Deleting original file from Drive: {drive_file_id}")
+        drive_manager.delete_file(drive_file_id)
+            
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "notion_page_url": page_url,
+            "drive_folder_url": folder_link
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error processing Drive video: {e}", exc_info=True)
+        
+        # Try to report error to Notion if possible
+        try:
+            if 'notion_client' in locals() and 'database_id' in locals() and 'field_map' in locals():
+                error_data = {
+                    "name": file_name,
+                    "status": "Error",
+                    "process_errors": str(e)[:2000],
+                    "video_date_time": datetime.now().isoformat()
+                }
+                notion_client.create_video_page(database_id, field_map, error_data)
+        except Exception as inner_e:
+            logger.error(f"Could not report error to Notion: {inner_e}")
+            
+        # Cleanup on failure
+        if temp_video_path: safe_remove_file(temp_video_path)
+        if temp_compressed_path: safe_remove_file(temp_compressed_path)
+        
+        raise e
+
+
 @celery_app.task(bind=True, base=CallbackTask)
 def test_task(self, message: str = "Hello from Celery!"):
     """

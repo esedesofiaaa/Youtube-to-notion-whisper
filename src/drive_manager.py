@@ -3,9 +3,10 @@ Google Drive manager module for uploading and organizing files.
 """
 import os
 import pickle
+import io
 from typing import Optional, Tuple
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from config.logger import get_logger
@@ -199,3 +200,56 @@ class DriveManager:
         except Exception as e:
             logger.error(f"❌ Error uploading file: {e}", exc_info=True)
             return False, None
+
+    def download_file(self, file_id: str, output_path: str) -> bool:
+        """
+        Download a file from Google Drive.
+
+        Args:
+            file_id: ID of the file to download
+            output_path: Path where to save the file
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            request = self.service.files().get_media(fileId=file_id)
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            with io.FileIO(output_path, 'wb') as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                    if status:
+                        logger.info(f"⬇️ Download progress {file_id}: {int(status.progress() * 100)}%")
+            
+            logger.info(f"✅ File downloaded successfully: {output_path}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error downloading file {file_id}: {e}", exc_info=True)
+            return False
+
+    def delete_file(self, file_id: str) -> bool:
+        """
+        Delete a file from Google Drive (move to trash).
+
+        Args:
+            file_id: ID of the file to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.service.files().update(
+                fileId=file_id,
+                body={'trashed': True},
+                supportsAllDrives=True
+            ).execute()
+            logger.info(f"🗑️ File {file_id} moved to trash")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error deleting file {file_id}: {e}", exc_info=True)
+            return False
