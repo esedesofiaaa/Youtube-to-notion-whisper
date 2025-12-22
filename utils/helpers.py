@@ -137,7 +137,7 @@ def sanitize_filename(filename):
     Returns:
         str: Sanitized filename
     """
-    return "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in filename)
+    return "".join(c if c.isalnum() or c in (' ', '-', '_', '.') else '_' for c in filename)
 
 
 def ensure_directory_exists(directory):
