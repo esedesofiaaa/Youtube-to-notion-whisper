@@ -1231,28 +1231,32 @@ def process_drive_video(
             raise Exception("Failed to create folder in Drive")
             
         # Upload video
-        video_drive_link = drive_manager.upload_file(
+        video_drive_file = drive_manager.upload_file(
             final_video_path, 
             folder_id, 
             f"{base_name}.mp4" if COMPRESSION_ENABLED else safe_filename
         )
+        video_drive_link = video_drive_file.web_view_link if video_drive_file else None
         
         # Upload audio
         audio_drive_link = None
         if audio_path:
-            audio_drive_link = drive_manager.upload_file(
+            audio_drive_file = drive_manager.upload_file(
                 audio_path,
                 folder_id,
                 os.path.basename(audio_path)
             )
+            audio_drive_link = audio_drive_file.web_view_link if audio_drive_file else None
         
         # Upload transcription
-        transcript_drive_link = drive_manager.upload_file(txt_path, folder_id, f"{base_name}.txt")
+        transcript_drive_file = drive_manager.upload_file(txt_path, folder_id, f"{base_name}.txt")
+        transcript_drive_link = transcript_drive_file.web_view_link if transcript_drive_file else None
         
         # Upload SRT if exists
         srt_drive_link = None
         if transcription_result.srt_path and os.path.exists(transcription_result.srt_path):
-            srt_drive_link = drive_manager.upload_file(srt_path, folder_id, f"{base_name}.srt")
+            srt_drive_file = drive_manager.upload_file(srt_path, folder_id, f"{base_name}.srt")
+            srt_drive_link = srt_drive_file.web_view_link if srt_drive_file else None
             
         folder_link = f"https://drive.google.com/drive/folders/{folder_id}"
 

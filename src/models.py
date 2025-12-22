@@ -194,6 +194,7 @@ class DriveFile:
     name: str
     mime_type: Optional[str] = None
     parent_folder_id: Optional[str] = None
+    web_view_link: Optional[str] = None
 
     @classmethod
     def from_api_response(cls, response: dict):
@@ -202,7 +203,8 @@ class DriveFile:
             id=response.get('id'),
             name=response.get('name'),
             mime_type=response.get('mimeType'),
-            parent_folder_id=response.get('parents', [None])[0] if response.get('parents') else None
+            parent_folder_id=response.get('parents', [None])[0] if response.get('parents') else None,
+            web_view_link=response.get('webViewLink')
         )
 
 

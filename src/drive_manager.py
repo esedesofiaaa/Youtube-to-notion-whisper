@@ -4,7 +4,7 @@ Google Drive manager module for uploading and organizing files.
 import os
 import pickle
 import io
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -101,41 +101,45 @@ class DriveManager:
             return None
 
     @retry_on_failure(max_retries=DRIVE_UPLOAD_MAX_RETRIES, delay=DRIVE_UPLOAD_RETRY_DELAY)
-    def upload_file(self, media_file: MediaFile, folder_id: str) -> Optional[DriveFile]:
+    def upload_file(self, media_file: Union[MediaFile, str], folder_id: str, filename: str = None) -> Optional[DriveFile]:
         """
         Upload a file to a specific Google Drive folder with automatic retries.
 
         Args:
-            media_file: MediaFile object with file info
+            media_file: MediaFile object or path string
             folder_id: ID of the destination folder in Drive
+            filename: Optional filename override (required if media_file is a string)
 
         Returns:
-            DriveFile object or None if fails
+            DriveFile object of the uploaded file or None if fails
 
         Note:
             This function has automatic retries configured via decorator.
         """
+        # Handle both MediaFile object and string path
+        if isinstance(media_file, str):
+            file_path = media_file
+            file_name = filename or os.path.basename(file_path)
+        else:
+            file_path = media_file.path
+            file_name = filename or media_file.filename
+
         file_metadata = {
-            'name': media_file.filename,
+            'name': file_name,
             'parents': [folder_id]
         }
-        media = MediaFileUpload(media_file.path, resumable=True)
+        media = MediaFileUpload(file_path, resumable=True)
 
         file = self.service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id',
+            fields='id, name, webViewLink, mimeType, parents',
             supportsAllDrives=True
         ).execute()
 
-        file_id = file.get('id')
-        logger.info(f"⬆️ File '{media_file.filename}' uploaded with ID: {file_id}")
+        logger.info(f"⬆️ File '{file_name}' uploaded with ID: {file.get('id')}")
 
-        return DriveFile(
-            id=file_id,
-            name=media_file.filename,
-            parent_folder_id=folder_id
-        )
+        return DriveFile.from_api_response(file)
 
     def file_exists(self, filename: str, folder_id: str) -> Tuple[bool, Optional[str]]:
         """

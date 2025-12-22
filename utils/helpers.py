@@ -261,3 +261,56 @@ def clean_temp_directory(directory):
     except OSError as e:
         logger.warning(f"⚠️ Error deleting temporary directory '{directory}': {e}")
         return False
+
+
+def format_timestamp(seconds: float) -> str:
+    """
+    Format seconds to SRT timestamp format (HH:MM:SS,mmm).
+    
+    Args:
+        seconds: Time in seconds
+        
+    Returns:
+        str: Formatted timestamp
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def generate_srt(segments: list, output_path: str):
+    """
+    Generate an SRT file from transcription segments.
+    
+    Args:
+        segments: List of segment dictionaries with 'start', 'end', 'text'
+        output_path: Path to save the SRT file
+    """
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for i, segment in enumerate(segments, start=1):
+                # Handle both dictionary and object access for segments
+                if isinstance(segment, dict):
+                    start_time = segment.get('start', 0)
+                    end_time = segment.get('end', 0)
+                    text = segment.get('text', '')
+                else:
+                    start_time = getattr(segment, 'start', 0)
+                    end_time = getattr(segment, 'end', 0)
+                    text = getattr(segment, 'text', '')
+
+                start = format_timestamp(start_time)
+                end = format_timestamp(end_time)
+                text = text.strip()
+                
+                f.write(f"{i}\n")
+                f.write(f"{start} --> {end}\n")
+                f.write(f"{text}\n\n")
+        
+        logger.info(f"📝 SRT file generated: {output_path}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error generating SRT file: {e}")
+        return False
