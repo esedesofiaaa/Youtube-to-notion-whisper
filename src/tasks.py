@@ -1286,7 +1286,13 @@ def process_drive_video(
             raise Exception("Failed to create Notion page")
             
         page_url = page.get("url")
+        page_id = page.get("id")
         logger.info(f"✅ Notion page created: {page_url}")
+
+        # Add transcript as dropdown block
+        if transcription_result and transcription_result.text:
+            logger.info("📝 Adding transcript dropdown to Notion page...")
+            notion_client.add_transcript_dropdown(page_id, transcription_result.text)
 
         # ============================================================
         # 8. CLEANUP
