@@ -587,7 +587,7 @@ class YouTubeDownloader:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=1800  # 30 minutes timeout
+                timeout=25000  # ~7 hours timeout (aligned with Celery limits)
             )
             
             logger.info(f"   FFmpeg return code: {result.returncode}")
