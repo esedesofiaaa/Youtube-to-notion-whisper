@@ -117,6 +117,29 @@ CHANNEL_TO_DATABASE_MAPPING = {
         "status_value": "Success"
     },
 
+    # Drive Uploads (Skip Compression)
+    "drive-uploads-skip": {
+        "action_type": "create_new_page",
+        "database_id": DRIVE_UPLOADS_DB_ID,
+        "database_name": "Drive Uploads (No Compress)",
+        "drive_folder_id": DRIVE_FOLDER_UPLOADS,
+        "skip_compression": True,
+        "field_map": {
+            "name": "Name",
+            "status": "Transcript Process Status",
+            "video_file": "Video FIle Link",
+            "drive_folder_link": "GoogleDriveFolderLink",
+            "audio_file": "Audio File Link",
+            "transcript_text": "Transcript",
+            "transcript_file": "Transcript File",
+            "transcript_srt_file": "Transcript SRT File",
+            "video_date_time": "Video Date and time",
+            "length_min": "Lenght min",
+            "process_errors": "ProcessErrors"
+        },
+        "status_value": "Success"
+    },
+
     # Both channels use the same Videos Database with same configuration
     "market-outlook": {
         **_VIDEOS_DB_BASE_CONFIG,

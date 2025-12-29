@@ -1206,7 +1206,9 @@ def process_drive_video(
             logger.warning("⚠️ Audio extraction failed")
 
         # Compress video
-        if COMPRESSION_ENABLED:
+        skip_compression = destination_db.get("skip_compression", False)
+        
+        if COMPRESSION_ENABLED and not skip_compression:
             logger.info("🗜️ Compressing video...")
             compressed_path = downloader.compress_video(temp_video_path)
             if compressed_path and os.path.exists(compressed_path):
@@ -1215,6 +1217,9 @@ def process_drive_video(
                 logger.info("✅ Video compressed successfully")
             else:
                 logger.warning("⚠️ Compression failed, using original video")
+        elif skip_compression:
+            logger.info("⏭️ Skipping compression (requested by channel configuration)")
+            final_video_path = temp_video_path
 
         # ============================================================
         # 6. UPLOAD TO DRIVE
