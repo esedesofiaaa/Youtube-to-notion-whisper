@@ -104,7 +104,8 @@ class AudioTranscriber:
                 text=transcription_text,
                 language=info.language,
                 language_probability=info.language_probability,
-                segments=segments_list
+                segments=segments_list,
+                duration=info.duration
             )
 
             # Save if output path provided

@@ -90,6 +90,7 @@ class TranscriptionResult:
     segments: Optional[list] = None  # Segments with timestamps for SRT
     output_path: Optional[str] = None
     srt_path: Optional[str] = None
+    duration: float = 0.0  # Duration in seconds
 
     def save(self, output_path: str) -> str:
         """Save the transcription to a file."""

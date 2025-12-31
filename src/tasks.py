@@ -1281,7 +1281,7 @@ def process_drive_video(
             "transcript_file": transcript_drive_link,
             "transcript_srt_file": srt_drive_link,
             "video_date_time": datetime.now().isoformat(),
-            "length_min": 0, # We could calculate this if needed
+            "length_min": round(transcription_result.duration / 60, 2) if transcription_result.duration else 0,
             "process_errors": None
         }
         
