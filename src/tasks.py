@@ -7,6 +7,7 @@ This module uses a unified streaming pipeline for all video processing:
 - Atomic upload to Drive and Notion creation after processing completes
 """
 import os
+import time
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 from src.celery_app import celery_app
@@ -107,6 +108,7 @@ def process_youtube_video(
     Raises:
         Exception: If processing fails after all retries
     """
+    start_time = time.time()
     task_id = self.request.id
     logger.info("=" * 80)
     logger.info(f"🚀 Starting video processing [Task ID: {task_id}]")
@@ -503,6 +505,9 @@ def process_youtube_video(
         status_value = destination_db.get("status_value")
         name_format = destination_db.get("name_format", "default")
         logger.info(f"📝 Notion action: {action_type} ({database_name})...")
+        
+        # Calculate processing time
+        processing_time = time.time() - start_time
 
         notion_page_url = None
         notion_page_id = None
@@ -537,6 +542,7 @@ def process_youtube_video(
             "discord_channel": channel,
             "status": status_value,
             "length_min": video_info.duration / 60 if video_info.duration else None,
+            "processing_time": processing_time,
             "process_errors": None
         }
 
@@ -590,7 +596,7 @@ def process_youtube_video(
                     update_props[column_name] = notion_client.build_select_property(value)
                 elif logical_key in ("date", "video_date_time"):
                     update_props[column_name] = notion_client.build_date_property(value)
-                elif logical_key == "length_min":
+                elif logical_key in ("length_min", "processing_time"):
                     update_props[column_name] = notion_client.build_number_property(value)
                 elif logical_key == "name":
                     update_props[column_name] = notion_client.build_title_property(str(value))
@@ -723,6 +729,7 @@ def process_discord_video(
     """
     from src.discord_downloader import DiscordDownloader
     
+    start_time = time.time()
     task_id = self.request.id
     logger.info("=" * 80)
     logger.info(f"🚀 Starting Discord video processing [Task ID: {task_id}]")
@@ -969,6 +976,9 @@ def process_discord_video(
         # ============================================================
         logger.info("📝 Creating/updating Notion page...")
         
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
         # Prepare data for Notion (only fields that apply to Discord videos)
         notion_data = {
             "name": video_title,
@@ -980,7 +990,8 @@ def process_discord_video(
             "transcript_srt_file": drive_transcript_srt_url,
             "transcript_text": transcription_text[:2000] if transcription_text else None,
             "status": destination_db.get("status_value", "complete"),
-            "length_min": transcription_result.duration_minutes if hasattr(transcription_result, 'duration_minutes') else None
+            "length_min": transcription_result.duration_minutes if hasattr(transcription_result, 'duration_minutes') else None,
+            "processing_time": processing_time
         }
         
         # Note: Discord videos don't have YouTube-specific fields:
@@ -1017,7 +1028,7 @@ def process_discord_video(
                     update_props[column_name] = notion_client.build_select_property(value)
                 elif logical_key in ("video_date_time",):
                     update_props[column_name] = notion_client.build_date_property(value)
-                elif logical_key == "length_min":
+                elif logical_key in ("length_min", "processing_time"):
                     update_props[column_name] = notion_client.build_number_property(value)
                 elif logical_key == "name":
                     update_props[column_name] = notion_client.build_title_property(str(value))
@@ -1111,6 +1122,7 @@ def process_drive_video(
     Returns:
         dict: Information about the completed task
     """
+    start_time = time.time()
     task_id = self.request.id
     logger.info("=" * 80)
     logger.info(f"🚀 Starting Drive video processing [Task ID: {task_id}]")
@@ -1270,6 +1282,9 @@ def process_drive_video(
         # ============================================================
         logger.info("📝 Creating Notion page...")
         
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
         # Prepare data
         notion_data = {
             "name": file_name,
@@ -1282,6 +1297,7 @@ def process_drive_video(
             "transcript_srt_file": srt_drive_link,
             "video_date_time": datetime.now().isoformat(),
             "length_min": round(transcription_result.duration / 60, 2) if transcription_result.duration else 0,
+            "processing_time": processing_time,
             "process_errors": None
         }
         

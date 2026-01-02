@@ -147,7 +147,7 @@ class NotionClient:
                 elif logical_key in ("discord_channel", "youtube_channel", "status", "youtube_listing_status"):
                     properties[column_name] = self.build_select_property(value)
                 
-                elif logical_key == "length_min":
+                elif logical_key in ("length_min", "processing_time"):
                     properties[column_name] = self.build_number_property(value)
                 
                 elif logical_key in ("video_id", "transcript_text", "process_errors"):

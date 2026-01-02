@@ -112,6 +112,7 @@ CHANNEL_TO_DATABASE_MAPPING = {
             "transcript_srt_file": "Transcript SRT File",
             "video_date_time": "Video Date and time",
             "length_min": "Lenght min",
+            "processing_time": "Processing time",
             "process_errors": "ProcessErrors"
         },
         "status_value": "Success"
@@ -135,6 +136,7 @@ CHANNEL_TO_DATABASE_MAPPING = {
             "transcript_srt_file": "Transcript SRT File",
             "video_date_time": "Video Date and time",
             "length_min": "Lenght min",
+            "processing_time": "Processing time",
             "process_errors": "ProcessErrors"
         },
         "status_value": "Success"
@@ -193,6 +195,7 @@ CHANNEL_TO_DATABASE_MAPPING = {
             "status": "Transcript Process Status",    # select
             "youtube_listing_status": "YoutubeListingStatus",  # select - Public/Unlisted
             "length_min": "Lenght min",               # number (typo in Notion)
+            "processing_time": "Processing time",     # number - seconds
             "process_errors": "ProcessErrors"         # text - error messages
         },
         "status_value": "Complete"
