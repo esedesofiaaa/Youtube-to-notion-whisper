@@ -163,7 +163,7 @@ COMPRESSION_ENABLED = os.getenv('COMPRESSION_ENABLED', 'True').lower() == 'true'
 # CRF (Constant Rate Factor): 0-51 (0=lossless, 23=default, 28=high compression acceptable)
 # Lower values = better quality but larger file size
 # Recommended: 23-28 for good balance
-COMPRESSION_CRF = int(os.getenv('COMPRESSION_CRF', '28'))
+COMPRESSION_CRF = int(os.getenv('COMPRESSION_CRF', '26'))
 
 # Preset: Speed vs compression efficiency trade-off
 # Options: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow

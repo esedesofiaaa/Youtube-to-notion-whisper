@@ -78,7 +78,9 @@ class YouTubeDownloader:
 
         if want_video:
             if prefer_mp4:
-                ydl_opts["format"] = "bv*[vcodec*=avc1]+ba[acodec*=mp4a]/b[ext=mp4]/b"
+                # Use best video and audio, merge to mp4. 
+                # This allows VP9/AV1 which gives better quality than limiting to avc1.
+                ydl_opts["format"] = "bv*+ba/b"
                 ydl_opts["merge_output_format"] = "mp4"
             else:
                 ydl_opts["format"] = "bv*+ba/b"
@@ -111,7 +113,7 @@ class YouTubeDownloader:
                 
                 logger.info(f"📹 Video info: '{video_info.title}' ({video_info.upload_date})")
                 logger.info(f"   ID: {video_info.video_id} | Channel: {video_info.channel}")
-                logger.info(f"   Duration: {video_info.duration/60:.1f} min | Availability: {video_info.availability}")
+                logger.info(f"   Duration: {video_info.duration/60:.1f} min | Resolution: {video_info.resolution} | Availability: {video_info.availability}")
                 
                 return video_info
         except Exception as e:

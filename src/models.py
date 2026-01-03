@@ -17,6 +17,7 @@ class VideoInfo:
     channel: str = ""
     duration: float = 0.0  # Duration in seconds
     availability: str = ""  # "public", "unlisted", "private"
+    resolution: str = ""  # e.g. "1920x1080"
 
     @classmethod
     def from_yt_info(cls, url: str, info: dict):
@@ -39,6 +40,11 @@ class VideoInfo:
             else:
                 upload_date = datetime.datetime.now().strftime(DATE_FORMAT)
         
+        # Get resolution
+        width = info.get("width")
+        height = info.get("height")
+        resolution = f"{width}x{height}" if width and height else "Unknown"
+        
         return cls(
             url=url,
             title=title,
@@ -47,7 +53,8 @@ class VideoInfo:
             video_id=info.get("id", ""),
             channel=info.get("channel") or info.get("uploader") or info.get("channel_name") or info.get("uploader_id") or "",
             duration=info.get("duration", 0.0) or 0.0,
-            availability=info.get("availability", "public") or "public"
+            availability=info.get("availability", "public") or "public",
+            resolution=resolution
         )
 
     @classmethod
