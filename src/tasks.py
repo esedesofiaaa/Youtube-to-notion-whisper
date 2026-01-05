@@ -757,11 +757,16 @@ def process_discord_video(
     
     start_time = time.time()
     task_id = self.request.id
+    
+    # Log effective limits
+    from config.settings import CELERY_TASK_TIME_LIMIT, CELERY_TASK_SOFT_TIME_LIMIT
+
     logger.info("=" * 80)
     logger.info(f"🚀 Starting Discord video processing [Task ID: {task_id}]")
     logger.info(f"   Discord Message URL: {discord_message_url}")
     logger.info(f"   Channel: {channel}")
     logger.info(f"   Notion Page ID: {notion_page_id}")
+    logger.info(f"   Time Limits: Hard={CELERY_TASK_TIME_LIMIT}s, Soft={CELERY_TASK_SOFT_TIME_LIMIT}s")
     logger.info("=" * 80)
     
     # Variables for error handling (will be set in try block)

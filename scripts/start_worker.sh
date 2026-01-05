@@ -21,9 +21,9 @@ fi
 
 # Usar timeouts desde variables de entorno (con fallbacks que coinciden con config/settings.py)
 # Nota: hard/soft < visibility_timeout para que el worker tenga control antes de que Redis re-encole.
-VISIBILITY_TIMEOUT=${CELERY_BROKER_VISIBILITY_TIMEOUT:-28800}  # Default: 8 horas
-TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-27000}    # Default: 7.5 horas
-SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-26000}  # Default: ~7.2 horas
+VISIBILITY_TIMEOUT=${CELERY_BROKER_VISIBILITY_TIMEOUT:-43200}  # Default: 12 horas
+TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-40000}    # Default: ~11 horas
+SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-39600}  # Default: ~11 horas
 
 echo "⏱️  Time limits configurados:"
 echo "   Visibility timeout: ${VISIBILITY_TIMEOUT}s ($(($VISIBILITY_TIMEOUT / 60)) minutos)"
