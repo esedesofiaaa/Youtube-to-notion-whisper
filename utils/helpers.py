@@ -314,3 +314,41 @@ def generate_srt(segments: list, output_path: str):
     except Exception as e:
         logger.error(f"❌ Error generating SRT file: {e}")
         return False
+
+
+def get_media_duration(file_path: str) -> float:
+    """
+    Get the duration of a media file using ffprobe.
+
+    Args:
+        file_path: Path to the media file
+
+    Returns:
+        float: Duration in seconds, or 0.0 if fails
+    """
+    try:
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            file_path
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            duration_str = result.stdout.decode('utf-8').strip()
+            return float(duration_str)
+        else:
+            logger.warning(f"⚠️ Could not get duration for {file_path}: {result.stderr.decode('utf-8')}")
+            return 0.0
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting media duration: {e}")
+        return 0.0

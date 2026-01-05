@@ -213,7 +213,8 @@ class YouTubeDownloader:
     def stream_and_capture(
         self,
         video_info: VideoInfo,
-        save_video: bool = True
+        save_video: bool = True,
+        is_live: bool = False
     ) -> Tuple[Optional[subprocess.Popen], Optional[BinaryIO], Optional[str]]:
         """
         Stream video from YouTube while simultaneously:
@@ -227,6 +228,7 @@ class YouTubeDownloader:
         Args:
             video_info: VideoInfo object with video details
             save_video: Whether to save the video file to disk
+            is_live: Whether the video is a live stream
 
         Returns:
             Tuple of (ffmpeg_process, audio_pipe, video_path)
@@ -246,7 +248,6 @@ class YouTubeDownloader:
             "-f", "bv*+ba/b",  # Best video + best audio, or best combined
             "-o", "-",  # Output to stdout
             "--no-part",
-            "--live-from-start",  # For live streams: download from beginning, not current moment
             "--wait-for-video", "30-120",  # Wait for scheduled/premiering videos (30-120 seconds retry)
             "--retries", str(YT_DLP_RETRIES),
             "--fragment-retries", str(YT_DLP_FRAGMENT_RETRIES),
@@ -256,6 +257,10 @@ class YouTubeDownloader:
             "--user-agent", YT_DLP_USER_AGENT,
             video_info.url
         ]
+
+        # Add live-specific flags only if it's a live stream
+        if is_live:
+            yt_dlp_cmd.append("--live-from-start")
 
         # Build FFmpeg command with multiple outputs
         # Input: pipe from yt-dlp
@@ -426,7 +431,7 @@ class YouTubeDownloader:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=300  # 5 minutes timeout
+                timeout=40000  # ~11 hours timeout
             )
             
             if result.returncode == 0 and os.path.exists(mp4_path):
@@ -492,7 +497,7 @@ class YouTubeDownloader:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=300  # 5 minutes timeout
+                timeout=40000  # ~11 hours timeout
             )
             
             logger.info(f"   FFmpeg return code: {result.returncode}")
@@ -589,7 +594,7 @@ class YouTubeDownloader:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=25000  # ~7 hours timeout (aligned with Celery limits)
+                timeout=40000  # ~11 hours timeout (aligned with Celery limits)
             )
             
             logger.info(f"   FFmpeg return code: {result.returncode}")
@@ -614,7 +619,7 @@ class YouTubeDownloader:
                 return None
                 
         except subprocess.TimeoutExpired:
-            logger.error("❌ FFmpeg compression timed out (exceeded 30 minutes)")
+            logger.error("❌ FFmpeg compression timed out (exceeded 11 hours)")
             return None
         except FileNotFoundError:
             logger.error("❌ FFmpeg not found. Please install FFmpeg.")

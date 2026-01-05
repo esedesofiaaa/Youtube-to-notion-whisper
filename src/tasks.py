@@ -110,12 +110,17 @@ def process_youtube_video(
     """
     start_time = time.time()
     task_id = self.request.id
+    
+    # Log effective limits
+    from config.settings import CELERY_TASK_TIME_LIMIT, CELERY_TASK_SOFT_TIME_LIMIT
+    
     logger.info("=" * 80)
     logger.info(f"🚀 Starting video processing [Task ID: {task_id}]")
     logger.info(f"   YouTube URL: {youtube_url}")
     logger.info(f"   Channel: {channel}")
     logger.info(f"   Discord Entry ID: {discord_entry_id}")
     logger.info(f"   Mode: Unified Streaming Pipeline")
+    logger.info(f"   Time Limits: Hard={CELERY_TASK_TIME_LIMIT}s, Soft={CELERY_TASK_SOFT_TIME_LIMIT}s")
     logger.info("=" * 80)
 
     # Track processing mode for result
@@ -241,8 +246,11 @@ def process_youtube_video(
 
         try:
             # Start the stream (saves video to disk + pipes audio for transcription)
+            is_live = video_info.duration == 0.0  # Assume live if duration is 0
             ffmpeg_process, audio_pipe, video_path = downloader.stream_and_capture(
-                video_info, save_video=True
+                video_info, 
+                save_video=True,
+                is_live=is_live
             )
 
             if not ffmpeg_process or not audio_pipe:
@@ -266,7 +274,8 @@ def process_youtube_video(
                 logger.info(f"   📝 Chunk {chunks_count}: {len(chunk_text)} chars transcribed")
 
             # Wait for FFmpeg to finish (stream/video ended)
-            ffmpeg_process.wait()
+            return_code = ffmpeg_process.wait()
+            logger.info(f"ℹ️ FFmpeg process ended with return code: {return_code}")
 
             # Check for FFmpeg errors
             ffmpeg_errors = downloader.get_stream_errors(ffmpeg_process)
@@ -274,6 +283,23 @@ def process_youtube_video(
                 logger.warning(f"⚠️ FFmpeg warnings: {ffmpeg_errors}")
 
             logger.info(f"✅ Streaming complete: {chunks_count} chunks, {len(transcription_text)} chars")
+            
+            # VALIDATE COMPLETENESS (For VODs)
+            if not is_live and video_info.duration > 0:
+                # Calculate transcribed duration from last segment
+                transcribed_duration = 0.0
+                if all_segments:
+                    transcribed_duration = all_segments[-1].get('end', 0.0)
+                
+                # Check if we missed more than 5% or 5 minutes of the video
+                duration_diff = video_info.duration - transcribed_duration
+                threshold = min(video_info.duration * 0.05, 300)  # 5% or 5 mins
+                
+                logger.info(f"⏱️ Duration check: Video={video_info.duration:.1f}s, Transcribed={transcribed_duration:.1f}s, Diff={duration_diff:.1f}s")
+                
+                if duration_diff > threshold:
+                    logger.warning(f"⚠️ Incomplete streaming transcription detected (missing {duration_diff:.1f}s). Triggering fallback.")
+                    raise Exception(f"Incomplete stream: Expected {video_info.duration}s, got {transcribed_duration}s")
 
         except (BrokenPipeError, IOError) as e:
             streaming_failed = True
@@ -1124,11 +1150,16 @@ def process_drive_video(
     """
     start_time = time.time()
     task_id = self.request.id
+    
+    # Log effective limits
+    from config.settings import CELERY_TASK_TIME_LIMIT, CELERY_TASK_SOFT_TIME_LIMIT
+    
     logger.info("=" * 80)
     logger.info(f"🚀 Starting Drive video processing [Task ID: {task_id}]")
     logger.info(f"   Drive File ID: {drive_file_id}")
     logger.info(f"   File Name: {file_name}")
     logger.info(f"   Channel: {channel}")
+    logger.info(f"   Time Limits: Hard={CELERY_TASK_TIME_LIMIT}s, Soft={CELERY_TASK_SOFT_TIME_LIMIT}s")
     logger.info("=" * 80)
 
     # Variables for cleanup
@@ -1177,6 +1208,11 @@ def process_drive_video(
         if not drive_manager.download_file(drive_file_id, temp_video_path):
             raise Exception(f"Failed to download file {drive_file_id}")
             
+        # Verify downloaded file duration
+        from utils.helpers import get_media_duration
+        duration = get_media_duration(temp_video_path)
+        logger.info(f"⏱️ Downloaded file duration: {duration/60:.2f} minutes")
+        
         video_file = MediaFile(temp_video_path, safe_filename, "video")
 
         # ============================================================

@@ -112,14 +112,14 @@ CELERY_TASK_RETRY_DELAY = int(os.getenv('CELERY_TASK_RETRY_DELAY', '60'))  # 60 
 # Broker visibility timeout (in seconds).
 # For Redis as broker: if a task isn't acknowledged within this window,
 # it becomes visible again and can be re-queued/executed by another worker.
-# We set this to 8 hours to support processing videos up to 4 hours end-to-end.
-CELERY_BROKER_VISIBILITY_TIMEOUT = int(os.getenv('CELERY_BROKER_VISIBILITY_TIMEOUT', '28800'))  # 8 hours
+# We set this to 12 hours to support processing videos up to 10 hours end-to-end.
+CELERY_BROKER_VISIBILITY_TIMEOUT = int(os.getenv('CELERY_BROKER_VISIBILITY_TIMEOUT', '43200'))  # 12 hours
 
 # Task time limits (in seconds) - long videos can take hours.
 # IMPORTANT: Keep task_time_limit slightly below broker visibility_timeout so the worker
 # can soft/hard-timeout the task before the broker makes it visible again.
-CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '27000'))  # 7.5 hours
-CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '26000'))  # ~7.2 hours
+CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '40000'))  # ~11 hours
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '39000'))  # ~10.8 hours
 
 # Worker configuration
 # IMPORTANT: For CPU, use concurrency=1 (sequential processing)

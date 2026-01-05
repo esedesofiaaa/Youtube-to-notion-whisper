@@ -217,6 +217,14 @@ class DriveManager:
             True if successful, False otherwise
         """
         try:
+            # Get file metadata first to check size
+            file_metadata = self.service.files().get(
+                fileId=file_id, 
+                fields='size, name',
+                supportsAllDrives=True
+            ).execute()
+            expected_size = int(file_metadata.get('size', 0))
+            
             request = self.service.files().get_media(fileId=file_id)
             
             # Ensure directory exists
@@ -229,6 +237,13 @@ class DriveManager:
                     status, done = downloader.next_chunk()
                     if status:
                         logger.info(f"⬇️ Download progress {file_id}: {int(status.progress() * 100)}%")
+            
+            # Verify downloaded size
+            if os.path.exists(output_path):
+                actual_size = os.path.getsize(output_path)
+                if expected_size > 0 and actual_size != expected_size:
+                    logger.error(f"❌ Download incomplete. Expected {expected_size} bytes, got {actual_size} bytes.")
+                    return False
             
             logger.info(f"✅ File downloaded successfully: {output_path}")
             return True
