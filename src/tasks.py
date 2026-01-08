@@ -340,6 +340,10 @@ def process_youtube_video(
             if video_file and video_file.exists():
                 video_path = video_file.path
                 logger.info(f"✅ Video downloaded: {video_file.filename}")
+            else:
+                # CRITICAL: If video download fails in fallback mode, we must abort.
+                # We cannot proceed with a partial result that lacks the video file.
+                raise Exception("Failed to download video in fallback mode. Aborting to ensure data integrity.")
 
             # Traditional download: audio
             logger.info("🎵 Downloading audio (fallback mode)...")

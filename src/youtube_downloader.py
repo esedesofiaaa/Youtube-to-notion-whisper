@@ -78,9 +78,13 @@ class YouTubeDownloader:
 
         if want_video:
             if prefer_mp4:
-                # Use best video and audio, merge to mp4. 
-                # This allows VP9/AV1 which gives better quality than limiting to avc1.
-                ydl_opts["format"] = "bv*+ba/b"
+                # Prioritize AVC1 (H.264) + M4A (AAC) for native MP4 compatibility without re-encoding
+                # This prevents heavy merging processes and timeouts on large videos
+                # Fallback chain: 
+                # 1. Best AVC1 video + AAC audio
+                # 2. Best file with mp4 extension
+                # 3. Best video + best audio (allow heavy merge as last resort)
+                ydl_opts["format"] = "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[ext=mp4]/bv*+ba/b"
                 ydl_opts["merge_output_format"] = "mp4"
             else:
                 ydl_opts["format"] = "bv*+ba/b"
