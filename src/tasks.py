@@ -370,6 +370,26 @@ def process_youtube_video(
         # ============================================================
         # 8. ATOMIC UPLOAD TO DRIVE (after processing completes)
         # ============================================================
+        # Integrity Checkpoint: Ensure all components exist before starting upload
+        has_video = video_path and os.path.exists(video_path)
+        has_audio = audio_path and os.path.exists(audio_path)
+        has_extracted_audio = False # Will be checked later if we extract from video
+        
+        # In streaming mode, we might only have video (which contains audio) and transcription
+        # In fallback mode, we should have video and audio files separated
+        
+        logger.info("🛡️ Performing Pre-Upload Integrity Check...")
+        if not transcription_text:
+             logger.error("❌ Integrity Check Failed: Transcription is empty or missing.")
+             raise Exception("Integrity Check Failed: Transcription missing")
+             
+        if not has_video and not has_audio:
+             logger.error("❌ Integrity Check Failed: Both video and audio files are missing.")
+             raise Exception("Integrity Check Failed: No media files found")
+             
+        # Normalize paths for upload logic
+        final_video_path = video_path
+        
         # Update status to "Uploading to Drive" (audit-process only)
         if action_type == "update_origin":
             logger.info("📊 Updating status to 'Uploading to Drive'...")
@@ -383,10 +403,9 @@ def process_youtube_video(
         drive_transcript_srt_url = None
 
         # Process video file (convert MKV to MP4 if needed, extract audio)
-        final_video_path = video_path
         extracted_audio_path = None
         
-        if video_path and os.path.exists(video_path):
+        if final_video_path and os.path.exists(final_video_path):
             # If video is MKV (from streaming), convert to MP4
             if video_path.endswith('.mkv'):
                 logger.info("🔄 Converting MKV to MP4 for better compatibility...")
