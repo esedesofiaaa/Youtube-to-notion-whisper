@@ -395,7 +395,7 @@ def process_youtube_video(
             logger.info("📊 Updating status to 'Uploading to Drive'...")
             notion_client.update_status_field(discord_entry_id, "Uploading to Drive", field_map)
         
-        logger.info("📤 Starting atomic upload to Drive...")
+        logger.info("📤 Starting STRICT ATOMIC upload to Drive...")
         
         drive_video_url = None
         drive_audio_url = None
@@ -446,45 +446,64 @@ def process_youtube_video(
                 else:
                     logger.warning("⚠️ Audio extraction failed")
 
-        # Upload video if exists
-        if final_video_path and os.path.exists(final_video_path):
+        # ----------------------------------------------------
+        # STRICT UPLOAD: VIDEO
+        # ----------------------------------------------------
+        if final_video_path:
+            if not os.path.exists(final_video_path):
+                raise Exception(f"CRITICAL: Video file missing before upload: {final_video_path}")
+
             logger.info(f"📤 Uploading video: {os.path.basename(final_video_path)}")
             video_file = MediaFile(
                 path=final_video_path,
                 filename=os.path.basename(final_video_path),
                 file_type='video'
             )
-            try:
-                uploaded, drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
-                if drive_file:
-                    drive_video_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                    logger.info(f"✅ Video uploaded: {drive_video_url}")
-            except Exception as e:
-                logger.error(f"❌ Error uploading video: {e}")
-            finally:
-                safe_remove_file(final_video_path)
+            
+            # No Try/Except - Let it crash if it fails
+            uploaded, drive_file = drive_manager.upload_if_not_exists(video_file, drive_folder_id)
+            
+            if not drive_file:
+                raise Exception(f"CRITICAL UPLOAD FAILED: Video {os.path.basename(final_video_path)}")
+            
+            drive_video_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+            logger.info(f"✅ Video uploaded: {drive_video_url}")
+            
+            # Only remove if successful
+            safe_remove_file(final_video_path)
 
-        # Upload audio - either from fallback mode or extracted from video
+        # ----------------------------------------------------
+        # STRICT UPLOAD: AUDIO
+        # ----------------------------------------------------
+        # Audio - either from fallback mode or extracted from video
         audio_to_upload = audio_path if (audio_path and os.path.exists(audio_path)) else extracted_audio_path
         
-        if audio_to_upload and os.path.exists(audio_to_upload):
+        if audio_to_upload:
+            if not os.path.exists(audio_to_upload):
+                raise Exception(f"CRITICAL: Audio file missing before upload: {audio_to_upload}")
+
             logger.info(f"📤 Uploading audio: {os.path.basename(audio_to_upload)}")
             audio_file_obj = MediaFile(
                 path=audio_to_upload,
                 filename=os.path.basename(audio_to_upload),
                 file_type='audio'
             )
-            try:
-                uploaded, drive_file = drive_manager.upload_if_not_exists(audio_file_obj, drive_folder_id)
-                if drive_file:
-                    drive_audio_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                    logger.info(f"✅ Audio uploaded: {drive_audio_url}")
-            except Exception as e:
-                logger.error(f"❌ Error uploading audio: {e}")
-            finally:
-                safe_remove_file(audio_to_upload)
+            
+            # No Try/Except
+            uploaded, drive_file = drive_manager.upload_if_not_exists(audio_file_obj, drive_folder_id)
+            
+            if not drive_file:
+                 raise Exception(f"CRITICAL UPLOAD FAILED: Audio {os.path.basename(audio_to_upload)}")
 
-        # Save and upload transcription files
+            drive_audio_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+            logger.info(f"✅ Audio uploaded: {drive_audio_url}")
+            
+            # Only remove if successful
+            safe_remove_file(audio_to_upload)
+
+        # ----------------------------------------------------
+        # STRICT UPLOAD: TRANSCRIPTS (TXT & SRT)
+        # ----------------------------------------------------
         if transcription_text:
             txt_filename = TRANSCRIPTION_FILE_FORMAT.format(
                 date=video_info.upload_date,
@@ -493,12 +512,12 @@ def process_youtube_video(
             local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
             local_srt_path = local_txt_path.replace('.txt', '.srt')
 
-            # Save TXT file
+            # Save TXT file locally
             with open(local_txt_path, 'w', encoding='utf-8') as f:
                 f.write(transcription_text.strip())
-            logger.info(f"✅ Transcription saved: {txt_filename}")
+            logger.info(f"✅ Transcription saved locally: {txt_filename}")
 
-            # Save SRT file if we have segments with timestamps
+            # Save SRT file locally
             if all_segments:
                 try:
                     temp_result = StreamingTranscriptionResult(
@@ -510,43 +529,47 @@ def process_youtube_video(
                         stream_completed=True
                     )
                     temp_result.save_srt(local_srt_path)
-                    logger.info(f"✅ SRT file generated: {os.path.basename(local_srt_path)}")
+                    logger.info(f"✅ SRT file generated locally: {os.path.basename(local_srt_path)}")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not generate SRT file: {e}")
 
-            # Upload TXT to Drive
+            # Upload TXT
             if os.path.exists(local_txt_path):
                 txt_file = MediaFile(
                     path=local_txt_path,
                     filename=os.path.basename(local_txt_path),
                     file_type='transcription'
                 )
-                try:
-                    uploaded, drive_file = drive_manager.upload_if_not_exists(txt_file, drive_folder_id)
-                    if drive_file:
-                        drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                        logger.info(f"✅ Transcript TXT uploaded: {drive_transcript_txt_url}")
-                except Exception as e:
-                    logger.error(f"❌ Error uploading TXT: {e}")
-                finally:
-                    safe_remove_file(local_txt_path)
+                
+                uploaded, drive_file = drive_manager.upload_if_not_exists(txt_file, drive_folder_id)
+                
+                if not drive_file:
+                     raise Exception(f"CRITICAL UPLOAD FAILED: Transcript TXT {os.path.basename(local_txt_path)}")
+                
+                drive_transcript_txt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                logger.info(f"✅ Transcript TXT uploaded: {drive_transcript_txt_url}")
+                
+                safe_remove_file(local_txt_path)
+            else:
+                 raise Exception("CRITICAL: TXT file verification failed before upload")
 
-            # Upload SRT to Drive
+            # Upload SRT
             if os.path.exists(local_srt_path):
                 srt_file = MediaFile(
                     path=local_srt_path,
                     filename=os.path.basename(local_srt_path),
                     file_type='transcription'
                 )
-                try:
-                    uploaded, drive_file = drive_manager.upload_if_not_exists(srt_file, drive_folder_id)
-                    if drive_file:
-                        drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
-                        logger.info(f"✅ Transcript SRT uploaded: {drive_transcript_srt_url}")
-                except Exception as e:
-                    logger.error(f"❌ Error uploading SRT: {e}")
-                finally:
-                    safe_remove_file(local_srt_path)
+                
+                uploaded, drive_file = drive_manager.upload_if_not_exists(srt_file, drive_folder_id)
+                
+                if not drive_file:
+                     raise Exception(f"CRITICAL UPLOAD FAILED: Transcript SRT {os.path.basename(local_srt_path)}")
+
+                drive_transcript_srt_url = f"https://drive.google.com/file/d/{drive_file.id}/view"
+                logger.info(f"✅ Transcript SRT uploaded: {drive_transcript_srt_url}")
+                
+                safe_remove_file(local_srt_path)
 
         # ============================================================
         # 9. CREATE/UPDATE NOTION PAGE (atomic, after everything is ready)
