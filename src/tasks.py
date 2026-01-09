@@ -132,10 +132,19 @@ def process_youtube_video(
     action_type = None
     field_map = {}
     notion_client = None
+    task_work_dir = None
 
     try:
         # ============================================================
-        # 1. VALIDATE AND GET CONFIGURATION
+        # 1. SETUP TASK WORKSPACE
+        # ============================================================
+        import shutil
+        task_work_dir = os.path.join(TEMP_DOWNLOAD_DIR, task_id)
+        ensure_directory_exists(task_work_dir)
+        logger.info(f"📁 Created task workspace: {task_work_dir}")
+
+        # ============================================================
+        # 2. VALIDATE AND GET CONFIGURATION
         # ============================================================
         destination_db = get_destination_database(channel)
         if not destination_db:
@@ -509,7 +518,8 @@ def process_youtube_video(
                 date=video_info.upload_date,
                 title=video_info.safe_title
             )
-            local_txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
+            # Use task_work_dir for local files
+            local_txt_path = os.path.join(task_work_dir, txt_filename)
             local_srt_path = local_txt_path.replace('.txt', '.srt')
 
             # Save TXT file locally
@@ -702,9 +712,11 @@ def process_youtube_video(
             raise ValueError(f"Unknown action_type: {action_type}")
 
         # ============================================================
-        # 10. CLEANUP
+        # 10. CLEANUP (Worker-Safe)
         # ============================================================
-        clean_temp_directory(TEMP_DOWNLOAD_DIR)
+        if task_work_dir and os.path.exists(task_work_dir):
+            logger.info(f"🧹 Cleaning up task workspace: {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
 
         # ============================================================
         # RESULT
@@ -745,7 +757,11 @@ def process_youtube_video(
         if action_type == "update_origin" and notion_client and field_map:
             notion_client.update_error_field(discord_entry_id, error_msg, field_map)
         
-        clean_temp_directory(TEMP_DOWNLOAD_DIR)
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace (on failure): {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
+            
         raise
 
     except Exception as e:
@@ -756,7 +772,11 @@ def process_youtube_video(
         if action_type == "update_origin" and notion_client and field_map:
             notion_client.update_error_field(discord_entry_id, error_msg, field_map)
         
-        clean_temp_directory(TEMP_DOWNLOAD_DIR)
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace (on failure): {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
+            
         raise
 
 
@@ -819,10 +839,19 @@ def process_discord_video(
     action_type = None
     field_map = {}
     notion_client = None
+    task_work_dir = None
     
     try:
         # ============================================================
-        # 1. VALIDATE AND GET CONFIGURATION
+        # 1. SETUP TASK WORKSPACE
+        # ============================================================
+        import shutil
+        task_work_dir = os.path.join(TEMP_DOWNLOAD_DIR, task_id)
+        ensure_directory_exists(task_work_dir)
+        logger.info(f"📁 Created task workspace: {task_work_dir}")
+
+        # ============================================================
+        # 2. VALIDATE AND GET CONFIGURATION
         # ============================================================
         destination_db = get_destination_database(channel)
         if not destination_db:
@@ -843,8 +872,9 @@ def process_discord_video(
         # ============================================================
         # 2. INITIALIZE COMPONENTS
         # ============================================================
-        ensure_directory_exists(TEMP_DOWNLOAD_DIR)
-        discord_downloader = DiscordDownloader(TEMP_DOWNLOAD_DIR)
+        # Use task-specific directory
+        ensure_directory_exists(task_work_dir)
+        discord_downloader = DiscordDownloader(output_dir=task_work_dir)
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
         drive_manager = DriveManager()
         notion_client = NotionClient()
@@ -904,7 +934,8 @@ def process_discord_video(
         logger.info(f"   Video exists: {os.path.exists(video_file.path)}")
         
         from src.youtube_downloader import YouTubeDownloader
-        temp_downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        # Use task-specific directory for temp files during extraction
+        temp_downloader = YouTubeDownloader(output_dir=task_work_dir)
         
         try:
             audio_file = temp_downloader.extract_audio_from_video(video_file.path)
@@ -944,7 +975,7 @@ def process_discord_video(
             date=upload_date,
             title=safe_title
         )
-        txt_path = os.path.join(TEMP_DOWNLOAD_DIR, txt_filename)
+        txt_path = os.path.join(task_work_dir, txt_filename)
         srt_path = txt_path.replace('.txt', '.srt')
         
         # Save TXT file
@@ -1168,7 +1199,11 @@ def process_discord_video(
         if action_type == "update_origin" and notion_client and field_map:
             notion_client.update_error_field(notion_page_id, error_msg, field_map)
         
-        clean_temp_directory(TEMP_DOWNLOAD_DIR)
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace (on failure): {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
+            
         raise
 
 
@@ -1218,10 +1253,19 @@ def process_drive_video(
     temp_audio_path = None
     temp_compressed_path = None
     transcription_result = None
+    task_work_dir = None
     
     try:
         # ============================================================
-        # 1. VALIDATE AND GET CONFIGURATION
+        # 1. SETUP TASK WORKSPACE
+        # ============================================================
+        import shutil
+        task_work_dir = os.path.join(TEMP_DOWNLOAD_DIR, task_id)
+        ensure_directory_exists(task_work_dir)
+        logger.info(f"📁 Created task workspace: {task_work_dir}")
+
+        # ============================================================
+        # 2. VALIDATE AND GET CONFIGURATION
         # ============================================================
         destination_db = get_destination_database(channel)
         if not destination_db:
@@ -1249,11 +1293,11 @@ def process_drive_video(
             raise Exception("Could not authenticate with Google Drive API")
 
         # ============================================================
-        # 3. DOWNLOAD VIDEO
+        # 4. DOWNLOAD VIDEO
         # ============================================================
         from utils.helpers import sanitize_filename
         safe_filename = sanitize_filename(file_name)
-        temp_video_path = os.path.join(TEMP_DOWNLOAD_DIR, safe_filename)
+        temp_video_path = os.path.join(task_work_dir, safe_filename)
         
         logger.info(f"⬇️ Downloading video from Drive: {drive_file_id}")
         if not drive_manager.download_file(drive_file_id, temp_video_path):
@@ -1278,8 +1322,8 @@ def process_drive_video(
             
         # Save transcription files
         base_name = os.path.splitext(safe_filename)[0]
-        txt_path = os.path.join(TEMP_DOWNLOAD_DIR, f"{base_name}.txt")
-        srt_path = os.path.join(TEMP_DOWNLOAD_DIR, f"{base_name}.srt")
+        txt_path = os.path.join(task_work_dir, f"{base_name}.txt")
+        srt_path = os.path.join(task_work_dir, f"{base_name}.srt")
         
         transcription_result.save(txt_path)
         
@@ -1403,16 +1447,13 @@ def process_drive_video(
             notion_client.add_transcript_dropdown(page_id, transcription_result.text)
 
         # ============================================================
-        # 8. CLEANUP
+        # 9. CLEANUP (Worker-Safe)
         # ============================================================
-        # Delete local temporary files
-        safe_remove_file(temp_video_path)
-        safe_remove_file(txt_path)
-        safe_remove_file(srt_path)
-        if temp_compressed_path:
-            safe_remove_file(temp_compressed_path)
-        if audio_path:
-            safe_remove_file(audio_path)
+        # Delete local temporary files by removing the task directory
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace: {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
             
         # Delete original file from Drive (source)
         logger.info(f"🗑️ Deleting original file from Drive: {drive_file_id}")
@@ -1442,8 +1483,10 @@ def process_drive_video(
             logger.error(f"Could not report error to Notion: {inner_e}")
             
         # Cleanup on failure
-        if temp_video_path: safe_remove_file(temp_video_path)
-        if temp_compressed_path: safe_remove_file(temp_compressed_path)
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace (on failure): {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
         
         raise e
 
