@@ -166,8 +166,8 @@ def process_youtube_video(
         # ============================================================
         # 2. INITIALIZE COMPONENTS
         # ============================================================
-        ensure_directory_exists(TEMP_DOWNLOAD_DIR)
-        downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        # Use task_work_dir for isolation
+        downloader = YouTubeDownloader(task_work_dir)
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
         drive_manager = DriveManager()
         notion_client = NotionClient()
@@ -1166,13 +1166,12 @@ def process_discord_video(
             logger.info(f"✅ Notion page updated: {notion_page_url}")
 
         # ============================================================
-        # 9. CLEANUP
+        # 9. CLEANUP (Worker-Safe)
         # ============================================================
-        logger.info("🧹 Cleaning up temporary files...")
-        safe_remove_file(video_file.path)
-        if audio_file:
-            safe_remove_file(audio_file.path)
-        # Transcript files already cleaned up after upload
+        if task_work_dir and os.path.exists(task_work_dir):
+            import shutil
+            logger.info(f"🧹 Cleaning up task workspace: {task_work_dir}")
+            shutil.rmtree(task_work_dir, ignore_errors=True)
         
         logger.info("=" * 80)
         logger.info("✅ Discord video processing completed successfully!")
@@ -1283,8 +1282,8 @@ def process_drive_video(
         # ============================================================
         # 2. INITIALIZE COMPONENTS
         # ============================================================
-        ensure_directory_exists(TEMP_DOWNLOAD_DIR)
-        downloader = YouTubeDownloader(TEMP_DOWNLOAD_DIR)
+        # Use task_work_dir for isolation
+        downloader = YouTubeDownloader(task_work_dir)
         transcriber = AudioTranscriber(WHISPER_MODEL_DEFAULT)
         drive_manager = DriveManager()
         notion_client = NotionClient()
