@@ -238,97 +238,129 @@ def process_youtube_video(
         drive_folder_url = f"https://drive.google.com/drive/folders/{drive_folder_id}"
 
         # ============================================================
-        # 7. STREAMING PIPELINE: DOWNLOAD + TRANSCRIBE SIMULTANEOUSLY
+        # 7. HYBRID PROCESSING: VOD (High Quality) vs LIVE (Stream)
         # ============================================================
-        # Update status to "Downloading" (audit-process only)
-        if action_type == "update_origin":
-            logger.info("📊 Updating status to 'Downloading'...")
-            notion_client.update_status_field(discord_entry_id, "Downloading", field_map)
-        
-        logger.info("🔴 Starting streaming pipeline (yt-dlp → FFmpeg → Whisper)...")
         
         video_path = None
         audio_path = None
         transcription_text = ""
         all_segments = []
+        chunks_count = 0
         ffmpeg_process = None
+        
+        # Detect if content is a LIVE STREAM
+        # Logic: duration == 0.0 usually indicates a live stream
+        is_live = video_info.duration == 0.0
 
-        try:
-            # Start the stream (saves video to disk + pipes audio for transcription)
-            is_live = video_info.duration == 0.0  # Assume live if duration is 0
-            ffmpeg_process, audio_pipe, video_path = downloader.stream_and_capture(
-                video_info, 
-                save_video=True,
-                is_live=is_live
-            )
+        if is_live:
+            # ----------------------------------------------------
+            # MODE A: LIVE STREAMING PIPELINE (Limited Quality, Real-time)
+            # ----------------------------------------------------
+            logger.info("🔴 Mode: LIVE STREAM DETECTED")
+            logger.info("   Using Streaming Pipeline (yt-dlp -> FFmpeg -> Whisper)...")
 
-            if not ffmpeg_process or not audio_pipe:
-                raise Exception("Failed to start streaming pipeline")
-
-            # Update status to "Transcribing" (audit-process only)
+            # Update status to "Downloading" (audit-process only)
             if action_type == "update_origin":
-                logger.info("📊 Updating status to 'Transcribing'...")
-                notion_client.update_status_field(discord_entry_id, "Transcribing", field_map)
+                notion_client.update_status_field(discord_entry_id, "Downloading", field_map)
 
-            # Transcribe from the audio pipe in real-time
-            logger.info("🎤 Starting real-time transcription...")
-            
-            # Consume the streaming transcription generator
-            for chunk_text, chunk_segments in transcriber.transcribe_stream(
-                audio_pipe, language="en"
-            ):
-                transcription_text += chunk_text
-                all_segments.extend(chunk_segments)
-                chunks_count += 1
-                logger.info(f"   📝 Chunk {chunks_count}: {len(chunk_text)} chars transcribed")
+            try:
+                ffmpeg_process, audio_pipe, video_path = downloader.stream_and_capture(
+                    video_info, 
+                    save_video=True,
+                    is_live=True
+                )
 
-            # Wait for FFmpeg to finish (stream/video ended)
-            return_code = ffmpeg_process.wait()
-            logger.info(f"ℹ️ FFmpeg process ended with return code: {return_code}")
+                if not ffmpeg_process or not audio_pipe:
+                    raise Exception("Failed to start streaming pipeline")
 
-            # Check for FFmpeg errors
-            ffmpeg_errors = downloader.get_stream_errors(ffmpeg_process)
-            if ffmpeg_errors:
-                logger.warning(f"⚠️ FFmpeg warnings: {ffmpeg_errors}")
+                # Update status to "Transcribing"
+                if action_type == "update_origin":
+                    notion_client.update_status_field(discord_entry_id, "Transcribing", field_map)
 
-            logger.info(f"✅ Streaming complete: {chunks_count} chunks, {len(transcription_text)} chars")
-            
-            # VALIDATE COMPLETENESS (For VODs)
-            if not is_live and video_info.duration > 0:
-                # Calculate transcribed duration from last segment
-                transcribed_duration = 0.0
-                if all_segments:
-                    transcribed_duration = all_segments[-1].get('end', 0.0)
+                logger.info("🎤 Starting real-time transcription...")
                 
-                # Check if we missed more than 5% or 5 minutes of the video
-                duration_diff = video_info.duration - transcribed_duration
-                threshold = min(video_info.duration * 0.05, 300)  # 5% or 5 mins
-                
-                logger.info(f"⏱️ Duration check: Video={video_info.duration:.1f}s, Transcribed={transcribed_duration:.1f}s, Diff={duration_diff:.1f}s")
-                
-                if duration_diff > threshold:
-                    logger.warning(f"⚠️ Incomplete streaming transcription detected (missing {duration_diff:.1f}s). Triggering fallback.")
-                    raise Exception(f"Incomplete stream: Expected {video_info.duration}s, got {transcribed_duration}s")
+                # Consume stream
+                for chunk_text, chunk_segments in transcriber.transcribe_stream(
+                    audio_pipe, language="en"
+                ):
+                    transcription_text += chunk_text
+                    all_segments.extend(chunk_segments)
+                    chunks_count += 1
+                    logger.info(f"   📝 Chunk {chunks_count}: {len(chunk_text)} chars transcribed")
 
-        except (BrokenPipeError, IOError) as e:
-            streaming_failed = True
-            stream_error = str(e)
-            logger.error(f"❌ Stream pipeline error (BrokenPipe/IO): {e}")
-            
-            # Try to stop any running processes
-            if ffmpeg_process:
-                downloader.stop_stream(ffmpeg_process)
+                # Wait for stream to end
+                return_code = ffmpeg_process.wait()
+                logger.info(f"ℹ️ Stream ended. FFmpeg return code: {return_code}")
+                
+            except (BrokenPipeError, IOError) as e:
+                streaming_failed = True
+                stream_error = str(e)
+                logger.error(f"❌ Stream pipeline error: {e}")
+                if ffmpeg_process: downloader.stop_stream(ffmpeg_process)
+            except Exception as e:
+                streaming_failed = True
+                stream_error = str(e)
+                logger.error(f"❌ Streaming error: {e}")
+                if ffmpeg_process: downloader.stop_stream(ffmpeg_process)
 
-        except Exception as e:
-            streaming_failed = True
-            stream_error = str(e)
-            logger.error(f"❌ Streaming error: {e}", exc_info=True)
-            
-            if ffmpeg_process:
-                downloader.stop_stream(ffmpeg_process)
+        else:
+            # ----------------------------------------------------
+            # MODE B: VOD - HIGH QUALITY DOWNLOAD (Standard HD 1080p)
+            # ----------------------------------------------------
+            logger.info("🎬 Mode: VOD DETECTED (Video on Demand)")
+            logger.info("   Using Direct Download for Standard HD Quality (1080p)...")
+
+            # Update status to "Downloading"
+            if action_type == "update_origin":
+                logger.info("📊 Updating status to 'Downloading'...")
+                notion_client.update_status_field(discord_entry_id, "Downloading", field_map)
+
+            try:
+                # 1. Download BEST VIDEO
+                video_file = downloader.download_video(video_info)
+                if not video_file or not video_file.exists():
+                     raise Exception("Failed to download video")
+                
+                video_path = video_file.path
+                logger.info(f"✅ Video downloaded (High Quality): {video_file.filename}")
+
+                # 2. Extract/Download Audio for Transcription
+                # We extract from the downloaded video to ensure sync and avoid 2nd download
+                logger.info("🎵 Extracting audio for transcription...")
+                audio_file = downloader.extract_audio_from_video(video_path)
+                
+                if not audio_file or not audio_file.exists():
+                     # Fallback to downloading audio separately if extraction fails
+                     logger.warning("⚠️ Extraction failed, downloading audio separately...")
+                     audio_file = downloader.download_audio(video_info)
+                
+                if not audio_file or not audio_file.exists():
+                     raise Exception("Failed to get audio for transcription")
+                
+                audio_path = audio_file.path
+                
+                # 3. Transcribe
+                if action_type == "update_origin":
+                    logger.info("📊 Updating status to 'Transcribing'...")
+                    notion_client.update_status_field(discord_entry_id, "Transcribing", field_map)
+
+                logger.info("🎤 Starting VOD transcription...")
+                transcription_result = transcriber.transcribe(audio_file, language="en")
+                
+                if transcription_result:
+                    transcription_text = transcription_result.text
+                    all_segments = transcription_result.segments or []
+                    logger.info(f"✅ VOD Transcription complete: {len(transcription_text)} chars")
+                else:
+                    raise Exception("Transcription returned no result")
+
+            except Exception as e:
+                # Treat VOD failures as critical (no streaming fallback)
+                logger.error(f"❌ VOD Processing failed: {e}")
+                raise e
 
         # ============================================================
-        # 7b. FALLBACK: TRADITIONAL PROCESSING IF STREAMING FAILED
+        # 7b. FALLBACK: TRADITIONAL PROCESSING IF STREAMING FAILED (LIVE ONLY)
         # ============================================================
         if streaming_failed:
             logger.warning("=" * 60)
