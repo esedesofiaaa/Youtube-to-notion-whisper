@@ -52,9 +52,12 @@ YT_DLP_RETRIES = int(os.getenv('YT_DLP_RETRIES', '10'))
 YT_DLP_FRAGMENT_RETRIES = int(os.getenv('YT_DLP_FRAGMENT_RETRIES', '10'))
 YT_DLP_SOCKET_TIMEOUT = int(os.getenv('YT_DLP_SOCKET_TIMEOUT', '20'))
 
-# Client configuration (avoid SABR)
-YT_DLP_PLAYER_SKIP = ["web_safari", "web"]
-YT_DLP_PLAYER_CLIENT = ["android", "ios", "tv"]
+# Client configuration (OAuth2 TV/Android strategy - avoid PO Token)
+YT_DLP_PLAYER_SKIP = ["web", "web_safari", "web_embedded", "web_music"]
+YT_DLP_PLAYER_CLIENT = ["android", "ios"]
+
+# OAuth2 cache directory for persistent TV sessions
+YT_DLP_CACHE_DIR = os.path.join(os.getcwd(), ".cache_yt_dlp")
 
 # Audio configuration
 YT_DLP_AUDIO_CODEC = os.getenv('YT_DLP_AUDIO_CODEC', 'mp3')

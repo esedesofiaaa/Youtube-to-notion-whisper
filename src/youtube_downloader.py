@@ -36,7 +36,12 @@ class YouTubeDownloader:
         quiet: bool = True
     ) -> dict:
         """
-        Build yt-dlp options avoiding SABR and problematic web players.
+        Build yt-dlp options using OAuth2 TV/Android client strategy.
+        
+        This configuration simulates a Smart TV / Android client to avoid
+        YouTube's PO Token requirement that affects web browser emulation.
+        Uses OAuth2 authentication with persistent cache for session survival
+        across systemd service restarts.
 
         Args:
             outtmpl: Output template for filename
@@ -48,6 +53,10 @@ class YouTubeDownloader:
         Returns:
             dict: yt-dlp options dictionary
         """
+        # Ensure cache directory exists for OAuth2 session persistence
+        os.makedirs(YT_DLP_CACHE_DIR, exist_ok=True)
+        
+        # Extractor args: Force Android/iOS clients, skip all web clients
         extractor_args = {
             "youtube": {
                 "player_skip": YT_DLP_PLAYER_SKIP,
@@ -55,12 +64,21 @@ class YouTubeDownloader:
             }
         }
 
+        # Android TV User-Agent header
         http_headers = {
             "User-Agent": YT_DLP_USER_AGENT,
             "Accept-Language": YT_DLP_ACCEPT_LANGUAGE,
         }
 
         ydl_opts = {
+            # OAuth2 authentication for TV/Android native login
+            "username": "oauth2",
+            "password": "",
+            
+            # Persistent cache for OAuth2 tokens (survives systemd restarts)
+            "cachedir": YT_DLP_CACHE_DIR,
+            
+            # Core options
             "quiet": quiet,
             "nocheckcertificate": False,
             "extractor_args": extractor_args,
