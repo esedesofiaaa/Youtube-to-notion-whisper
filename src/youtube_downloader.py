@@ -36,12 +36,11 @@ class YouTubeDownloader:
         quiet: bool = True
     ) -> dict:
         """
-        Build yt-dlp options using OAuth2 TV/Android client strategy.
+        Build yt-dlp options using cookie-based authentication.
         
-        This configuration simulates a Smart TV / Android client to avoid
-        YouTube's PO Token requirement that affects web browser emulation.
-        Uses OAuth2 authentication with persistent cache for session survival
-        across systemd service restarts.
+        This configuration uses a cookies.txt file exported from a browser
+        to authenticate with YouTube, combined with Android/iOS client 
+        spoofing to avoid PO Token requirements on residential IPs.
 
         Args:
             outtmpl: Output template for filename
@@ -53,10 +52,10 @@ class YouTubeDownloader:
         Returns:
             dict: yt-dlp options dictionary
         """
-        # Ensure cache directory exists for OAuth2 session persistence
-        os.makedirs(YT_DLP_CACHE_DIR, exist_ok=True)
+        # Cookie file path (Netscape format exported from browser)
+        cookiefile = os.path.join(os.getcwd(), "youtube.com_cookies.txt")
         
-        # Extractor args: Force Android/iOS clients, skip all web clients
+        # Extractor args: Force Android/iOS clients, skip web clients
         extractor_args = {
             "youtube": {
                 "player_skip": YT_DLP_PLAYER_SKIP,
@@ -64,19 +63,15 @@ class YouTubeDownloader:
             }
         }
 
-        # Android TV User-Agent header
+        # Android User-Agent header
         http_headers = {
             "User-Agent": YT_DLP_USER_AGENT,
             "Accept-Language": YT_DLP_ACCEPT_LANGUAGE,
         }
 
         ydl_opts = {
-            # OAuth2 authentication for TV/Android native login
-            "username": "oauth2",
-            "password": "",
-            
-            # Persistent cache for OAuth2 tokens (survives systemd restarts)
-            "cachedir": YT_DLP_CACHE_DIR,
+            # Cookie-based authentication
+            "cookiefile": cookiefile,
             
             # Core options
             "quiet": quiet,
