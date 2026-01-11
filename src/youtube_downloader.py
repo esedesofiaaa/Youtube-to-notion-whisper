@@ -39,8 +39,8 @@ class YouTubeDownloader:
         Build yt-dlp options using cookie-based authentication.
         
         This configuration uses a cookies.txt file exported from a browser
-        to authenticate with YouTube, combined with Android/iOS client 
-        spoofing to avoid PO Token requirements on residential IPs.
+        to authenticate with YouTube. The web client is used by default
+        as it's fully compatible with browser cookies.
 
         Args:
             outtmpl: Output template for filename
@@ -55,17 +55,20 @@ class YouTubeDownloader:
         # Cookie file path (Netscape format exported from browser)
         cookiefile = os.path.join(os.getcwd(), "youtube.com_cookies.txt")
         
-        # Extractor args: Force Android/iOS clients, skip web clients
-        extractor_args = {
-            "youtube": {
-                "player_skip": YT_DLP_PLAYER_SKIP,
-                "player_client": YT_DLP_PLAYER_CLIENT,
-            }
-        }
+        # NOTE: extractor_args with mobile clients (android/ios) are INCOMPATIBLE with browser cookies
+        # Mobile clients don't support cookie authentication, causing "No video formats found" error
+        # Commenting out to use default web client which works with cookies
+        #
+        # extractor_args = {
+        #     "youtube": {
+        #         "player_skip": YT_DLP_PLAYER_SKIP,
+        #         "player_client": YT_DLP_PLAYER_CLIENT,
+        #     }
+        # }
 
-        # Android User-Agent header
+        # Standard web browser User-Agent (compatible with cookies)
         http_headers = {
-            "User-Agent": YT_DLP_USER_AGENT,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": YT_DLP_ACCEPT_LANGUAGE,
         }
 
@@ -76,7 +79,7 @@ class YouTubeDownloader:
             # Core options
             "quiet": quiet,
             "nocheckcertificate": False,
-            "extractor_args": extractor_args,
+            # "extractor_args": extractor_args,  # REMOVED: Conflicts with cookies
             "http_headers": http_headers,
             "retries": YT_DLP_RETRIES,
             "fragment_retries": YT_DLP_FRAGMENT_RETRIES,
