@@ -8,6 +8,7 @@ This module uses a unified streaming pipeline for all video processing:
 """
 import os
 import time
+import re
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 from src.celery_app import celery_app
@@ -1286,6 +1287,27 @@ def process_drive_video(
     transcription_result = None
     task_work_dir = None
     
+    # Extract tags from filename
+    # Logic: Look for [Tag1, Tag2] pattern in filename
+    extracted_tags = []
+    clean_name = os.path.splitext(file_name)[0]  # Default: filename without extension
+
+    match = re.search(r'\[(.*?)\]', file_name)
+    if match:
+        tags_str = match.group(1)
+        # Split by comma and strip whitespace
+        extracted_tags = [tag.strip() for tag in tags_str.split(',') if tag.strip()]
+        
+        # Clean name: Name without tags and without extension
+        # Remove the match from file_name
+        base_name_with_ext = file_name.replace(match.group(0), '').strip()
+        # Remove double spaces if any
+        base_name_with_ext = re.sub(r'\s+', ' ', base_name_with_ext)
+        clean_name = os.path.splitext(base_name_with_ext)[0]
+        
+    logger.info(f"   Cleaned Name: {clean_name}")
+    logger.info(f"   Extracted Tags: {extracted_tags}")
+
     try:
         # ============================================================
         # 1. SETUP TASK WORKSPACE
@@ -1449,7 +1471,8 @@ def process_drive_video(
 
         # Prepare data
         notion_data = {
-            "name": file_name,
+            "name": clean_name,
+            "tags": extracted_tags,
             "status": destination_db.get("status_value", "Success"),
             "video_file": video_drive_link,
             "drive_folder_link": folder_link,

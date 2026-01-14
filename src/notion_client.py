@@ -147,6 +147,9 @@ class NotionClient:
                 elif logical_key in ("discord_channel", "youtube_channel", "status", "youtube_listing_status"):
                     properties[column_name] = self.build_select_property(value)
                 
+                elif logical_key == "tags":
+                    properties[column_name] = self.build_multi_select_property(value)
+
                 elif logical_key in ("length_min", "processing_time"):
                     properties[column_name] = self.build_number_property(value)
                 
@@ -319,6 +322,11 @@ class NotionClient:
     def build_select_property(value: str) -> dict:
         """Build a Select type property value."""
         return {"select": {"name": value}}
+
+    @staticmethod
+    def build_multi_select_property(values: list) -> dict:
+        """Build a Multi-select type property value."""
+        return {"multi_select": [{"name": val} for val in values]}
 
     @staticmethod
     def build_title_property(text: str) -> dict:
