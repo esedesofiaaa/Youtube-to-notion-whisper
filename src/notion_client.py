@@ -382,10 +382,10 @@ class NotionClient:
                 if current_chunk:
                     chunks.append(current_chunk.strip())
 
-            # Create toggle (dropdown) block with transcript
-            children = []
+            # Create block objects for all chunks
+            all_children = []
             for chunk in chunks:
-                children.append({
+                all_children.append({
                     "object": "block",
                     "type": "paragraph",
                     "paragraph": {
@@ -393,20 +393,47 @@ class NotionClient:
                     }
                 })
 
+            # Notion API has a limit of 100 children per request.
+            # We must batch the children if there are many.
+            BATCH_SIZE = 100
+            
+            # The first batch goes inside the toggle creation
+            first_batch = all_children[:BATCH_SIZE]
+            remaining_children = all_children[BATCH_SIZE:]
+
             toggle_block = {
                 "object": "block",
                 "type": "toggle",
                 "toggle": {
                     "rich_text": [{"type": "text", "text": {"content": "📝 Transcript"}}],
-                    "children": children
+                    "children": first_batch
                 }
             }
 
-            # Append block to page
-            self.client.blocks.children.append(
+            # Append the main toggle block to the page
+            response = self.client.blocks.children.append(
                 block_id=page_id,
                 children=[toggle_block]
             )
+
+            # If we have more content than fits in the initial create, append it to the new toggle block
+            if remaining_children:
+                # We need the ID of the toggle block we just created
+                if 'results' in response and len(response['results']) > 0:
+                    toggle_id = response['results'][0]['id']
+                    
+                    # Process remaining children in batches
+                    total_batches = (len(remaining_children) + BATCH_SIZE - 1) // BATCH_SIZE
+                    
+                    for i in range(0, len(remaining_children), BATCH_SIZE):
+                        batch = remaining_children[i:i + BATCH_SIZE]
+                        self.client.blocks.children.append(
+                            block_id=toggle_id,
+                            children=batch
+                        )
+                        logger.info(f"   📄 Appended transcript batch {(i // BATCH_SIZE) + 1}/{total_batches}")
+                else:
+                    logger.warning("⚠️ Could not find Toggle Block ID to append remaining transcript.")
 
             logger.info(f"✅ Transcript dropdown added to Notion page: {page_id}")
             return True
